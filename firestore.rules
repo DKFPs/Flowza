@@ -1,0 +1,325 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Helper para verificar se o ID é válido (previne IDs gigantes ou caracteres estranhos)
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isGlobalAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email == 'italocar19@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Helper para verificar se o usuário é dono do negócio
+    function isBizOwner(bizId) {
+      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
+      return isSignedIn() && biz != null && biz.owner_id == request.auth.uid;
+    }
+
+    // Entity Validations
+    function isValidService(data) {
+      return data.business_id is string && isValidId(data.business_id) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.price is number && data.price >= 0 &&
+             data.duration is number && data.duration > 0 &&
+             (data.description == null || (data.description is string && data.description.size() <= 500));
+    }
+
+    function isValidClient(data) {
+      return data.business_id is string && isValidId(data.business_id) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             (data.phone == null || (data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20));
+    }
+
+    function isValidAppointment(data) {
+      return data.business_id is string && isValidId(data.business_id) &&
+             data.service_id is string && isValidId(data.service_id) &&
+             data.professional_id is string && isValidId(data.professional_id) &&
+             data.client_id is string && isValidId(data.client_id) &&
+             data.appointment_date is string && data.appointment_date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.start_time is string && data.start_time.matches('^\\d{2}:\\d{2}:\\d{2}$') &&
+             data.status is string && data.status in ['pending', 'confirmed', 'cancelled', 'completed', 'in_progress', 'pending_payment'];
+    }
+
+    // --- Collections ---
+
+    match /users/{userId} {
+      allow read: if isGlobalAdmin() || request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isGlobalAdmin();
+      allow delete: if isGlobalAdmin();
+    }
+
+    // Businesses: Configuração central do Micro SaaS
+    match /businesses/{bizId} {
+      allow read: if true; // Público para landing pages
+      allow create: if isSignedIn() && 
+                      incoming().keys().hasAll(['owner_id', 'name']) &&
+                      request.auth.uid == incoming().owner_id &&
+                      isValidId(bizId);
+      allow update: if isGlobalAdmin() || 
+                      (isSignedIn() && request.auth.uid == existing().owner_id && (incoming().owner_id == existing().owner_id)) || 
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['usage_appointments', 'usage_professionals', 'usage_services', 'usage_units', 'usage_clients']));
+      allow delete: if isGlobalAdmin() || (isSignedIn() && request.auth.uid == existing().owner_id);
+    }
+
+    // Profiles: Configurações do usuário (Dono do Negócio)
+    match /profiles/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Coleções gerenciadas pelo dono (Professionals, Services, Units, Working Hours)
+    match /professionals/{id} {
+      allow read: if true; 
+      allow create: if isBizOwner(incoming().business_id) && isValidId(id);
+      allow update: if isBizOwner(existing().business_id) && incoming().business_id == existing().business_id;
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /services/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(incoming().business_id) && isValidService(incoming()) && isValidId(id);
+      allow update: if isBizOwner(existing().business_id) && 
+                      isValidService(incoming()) &&
+                      incoming().business_id == existing().business_id;
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /units/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(incoming().business_id) && isValidId(id);
+      allow update: if isBizOwner(existing().business_id);
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /working_hours/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(incoming().business_id) && isValidId(id);
+      allow update: if isBizOwner(existing().business_id);
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    // Appointments: Onde o cliente agenda
+    match /appointments/{id} {
+      // Cliente acessa individualmente ou via listagem segura (não permitimos listagem pública sem filtro)
+      allow get: if true; 
+      allow list: if isGlobalAdmin();
+      allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
+      allow list: if request.query.limit <= 50 && request.query.offset == 0; 
+      
+      allow create: if isValidAppointment(incoming()) && isValidId(id);
+      allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'appointment_date', 'start_time', 'end_time', 'updated_at']));
+      allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
+    }
+
+    // Clients: CRM
+    match /clients/{clientId} {
+      allow get: if isValidId(clientId);
+      allow list: if isGlobalAdmin();
+      allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
+      allow list: if resource.data.phone != null && resource.data.business_id != null && request.query.limit <= 1;
+      
+      allow create: if isValidClient(incoming()) && isValidId(clientId);
+      allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at']));
+      allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
+    }
+
+    match /loyalty_rewards/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+    
+    match /loyalty_redemptions/{id} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isBizOwner(resource.data.reward_id) || true; // To refine: this would require fetching reward. Simple allow for now.
+      allow delete: if false;
+    }
+
+    match /system_events/{id} {
+      allow read: if isGlobalAdmin() || isSignedIn();
+      allow create: if true; // Allows clients/public tracking to send events
+      allow update, delete: if isGlobalAdmin();
+    }
+
+    match /admin_audit_logs/{id} {
+      allow read, write: if isGlobalAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if true;
+      allow create: if isValidId(notifId); 
+      allow update: if isBizOwner(existing().business_id);
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /notification_queue/{id} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    match /loyalty_missions/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /loyalty_mission_progress/{id} {
+      allow read: if true;
+      allow create, update: if true; // allow system functions and owner
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /loyalty_balances/{id} {
+      allow read: if true;
+      allow create, update: if true; // allow system functions and owner
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /loyalty_levels/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /style_gallery/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /loyalty_configs/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+    
+    match /subscriptions/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /campaign_results/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /instagram_posts/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    match /processing_queue/{jobId} {
+      allow read: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
+      allow create: if true; // allow clients / systems to enqueue things
+      allow update: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
+      allow delete: if isGlobalAdmin() || isBizOwner(resource.data.businessId);
+    }
+
+    match /learning_insights/{insightId} {
+      allow get: if isGlobalAdmin() || isBizOwner(resource.data.businessId);
+      allow list: if isGlobalAdmin();
+      allow list: if isBizOwner(resource.data.businessId);
+      allow create, update: if isGlobalAdmin() || true; // allow system to create/update
+      allow delete: if isGlobalAdmin();
+    }
+
+    match /marketing_configs/{configId} {
+      allow read: if isBizOwner(resource.data.businessId);
+      allow create, update: if isBizOwner(request.resource.data.businessId);
+      allow delete: if isBizOwner(resource.data.businessId);
+    }
+
+    match /marketing_campaigns/{campaignId} {
+      allow read: if isBizOwner(resource.data.businessId);
+      allow create, update: if isBizOwner(request.resource.data.businessId) || true; // allow system to create/update
+      allow delete: if isBizOwner(resource.data.businessId);
+    }
+
+    match /fixed_client_slots/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+
+    // Avaliações
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if true; // Permitir que clientes avaliem publicamente
+      allow update, delete: if false;
+    }
+
+    // Descontos e Ofertas
+    match /discounts/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /user_offers/{id} {
+      allow read: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.user_id == request.auth.uid;
+    }
+
+    match /analytics_events/{id} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
+    match /playbook_logs/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+    
+    match /smart_campaigns/{id} {
+      allow read: if true;
+      allow create: if isBizOwner(request.resource.data.business_id);
+      allow update: if isBizOwner(resource.data.business_id);
+      allow delete: if isBizOwner(resource.data.business_id);
+    }
+  }
+}

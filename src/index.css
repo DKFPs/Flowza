@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 4.5%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 6.5%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 4.5%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 263 70% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 263 70% 60%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 4% 15%;
+    --input: 240 4% 15%;
+    --ring: 263 70% 60%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 240 10% 4.5%;
+    --sidebar-foreground: 240 5% 90%;
+    --sidebar-primary: 263 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4% 12%;
+    --sidebar-accent-foreground: 240 5% 95%;
+    --sidebar-border: 240 4% 15%;
+    --sidebar-ring: 263 70% 60%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 144 61% 91%;
+    --warning: 48 96% 53%;
+    --warning-foreground: 26 83% 14%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading tracking-tight;
+    font-weight: 700;
+  }
+}
+
+@layer components {
+  .section-spacing {
+    @apply py-16 md:py-24 px-6 md:px-12 lg:px-24;
+  }
+  .section-container {
+    @apply max-w-6xl mx-auto;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

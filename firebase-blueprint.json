@@ -1,0 +1,576 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Usuário do sistema (incluindo clientes do SaaS e admin global)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
+    },
+    "Business": {
+      "title": "Negócio",
+      "description": "Informações básicas e configurações de aparência do estabelecimento.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nome do negócio" },
+        "slug": { "type": "string", "description": "Identificador único na URL" },
+        "owner_id": { "type": "string", "description": "UID do dono do negócio" },
+        "plan_id": { "type": "string", "enum": ["free", "pro", "business", "premium"], "description": "ID do plano atual" },
+        "subscription_status": { "type": "string", "enum": ["active", "canceled", "trialing", "past_due"], "description": "Status da assinatura" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "description": { "type": "string" },
+        "logo_url": { "type": "string" },
+        "primary_color": { "type": "string" },
+        "secondary_color": { "type": "string" },
+        "accent_color": { "type": "string" },
+        "layout_style": { "type": "string" },
+        "border_radius": { "type": "string" },
+        "font_heading": { "type": "string" },
+        "font_body": { "type": "string" },
+        "api_keys": {
+          "type": "object",
+          "properties": {
+            "openai": { "type": "string" },
+            "mercadopago": { "type": "string" },
+            "stripe": { "type": "string" },
+            "firebase": { "type": "string" }
+          }
+        },
+        "instagram_config": {
+          "type": "object",
+          "properties": {
+            "access_token": { "type": "string" },
+            "user_id": { "type": "string" },
+            "username": { "type": "string" },
+            "expires_at": { "type": "number" },
+            "is_active": { "type": "boolean" }
+          }
+        },
+        "ai_settings": {
+          "type": "object",
+          "properties": {
+            "enable_smart_slots": { "type": "boolean", "default": true },
+            "enable_gap_prevention": { "type": "boolean", "default": true },
+            "enable_auto_reengagement": { "type": "boolean", "default": false },
+            "enable_smart_reminders": { "type": "boolean", "default": true },
+            "whatsapp_simulation": { "type": "boolean", "default": true },
+            "automation_level": { "type": "string", "enum": ["low", "medium", "high"], "default": "medium" }
+          }
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug", "owner_id"]
+    },
+    "Profile": {
+      "title": "Perfil de Usuário",
+      "description": "Dados do usuário e seu papel no sistema.",
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "professional", "client"] },
+        "business_id": { "type": "string" },
+        "avatar_url": { "type": "string" }
+      },
+      "required": ["role"]
+    },
+    "Service": {
+      "title": "Serviço",
+      "description": "Serviços oferecidos pelo negócio.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "duration": { "type": "integer", "description": "Duração em minutos" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["business_id", "name", "price", "duration"]
+    },
+    "Professional": {
+      "title": "Profissional",
+      "description": "Colaboradores do negócio.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "specialty": { "type": "string" },
+        "avatar_url": { "type": "string" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["business_id", "name"]
+    },
+    "Appointment": {
+      "title": "Agendamento",
+      "description": "Reserva de horário realizada por um cliente.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "service_id": { "type": "string" },
+        "professional_id": { "type": "string" },
+        "appointment_date": { "type": "string", "format": "date" },
+        "start_time": { "type": "string" },
+        "end_time": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled", "completed"] },
+        "notes": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["business_id", "service_id", "professional_id", "appointment_date", "start_time"]
+    },
+    "Unit": {
+      "title": "Unidade",
+      "description": "Unidades físicas do negócio.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "phone": { "type": "string" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["business_id", "name"]
+    },
+    "Client": {
+      "title": "Cliente",
+      "description": "Clientes cadastrados no negócio.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["business_id", "name"]
+    },
+    "Review": {
+      "title": "Avaliação",
+      "description": "Avaliações deixadas pelos clientes.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "rating": { "type": "integer" },
+        "comment": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["business_id", "client_id", "rating"]
+    },
+    "WorkingHour": {
+      "title": "Horário de Trabalho",
+      "description": "Configuração de horários de trabalho dos profissionais.",
+      "type": "object",
+      "properties": {
+        "professional_id": { "type": "string" },
+        "day_of_week": { "type": "string" },
+        "start_time": { "type": "string" },
+        "end_time": { "type": "string" }
+      },
+      "required": ["professional_id", "day_of_week", "start_time", "end_time"]
+    },
+    "FixedClientSlot": {
+      "title": "Cliente Fixo",
+      "description": "Horários fixos reservados para clientes específicos.",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "professional_id": { "type": "string" },
+        "client_name": { "type": "string" },
+        "day_of_week": { "type": "string" },
+        "start_time": { "type": "string" },
+        "end_time": { "type": "string" },
+        "service_id": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["business_id", "professional_id", "day_of_week", "start_time", "end_time"]
+    },
+    "LoyaltyConfig": {
+      "title": "Configuração de Fidelidade",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "points_per_brl": { "type": "number", "description": "R$1 = X pontos" },
+        "min_points_to_redeem": { "type": "number" },
+        "point_expiration_days": { "type": "integer", "default": 90 },
+        "first_visit_bonus": { "type": "number" },
+        "referral_bonus": { "type": "number" },
+        "is_enabled": { "type": "boolean" }
+      },
+      "required": ["business_id"]
+    },
+    "LoyaltyPoints": {
+      "title": "Registro de Pontos",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "points": { "type": "number" },
+        "source": { "type": "string", "enum": ["appointment", "bonus", "referral", "manual"] },
+        "reference_id": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["business_id", "client_id", "points", "source"]
+    },
+    "Notification": {
+      "title": "Notificação",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "type": { "type": "string" },
+        "channel": { "type": "string" },
+        "status": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "StyleGalleryItem": {
+      "title": "Item da Galeria",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "title": { "type": "string" },
+        "image_url": { "type": "string" },
+        "category": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "InstagramPost": {
+      "title": "Post do Instagram",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "media_url": { "type": "string" },
+        "media_type": { "type": "string" },
+        "permalink": { "type": "string" },
+        "caption": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["business_id", "media_url", "permalink", "timestamp"]
+    },
+    "Discount": {
+      "title": "Cupom de Desconto",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "type": { "type": "string", "enum": ["percentage", "fixed"] },
+        "value": { "type": "number" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "max_uses": { "type": "integer" },
+        "current_uses": { "type": "integer" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["code", "type", "value"]
+    },
+    "UserOffer": {
+      "title": "Oferta Personalizada",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "discount_id": { "type": "string" },
+        "trigger": { "type": "string", "enum": ["activation", "inactivity", "limit_reached"] },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "is_used": { "type": "boolean" }
+      }
+    },
+    "LoyaltyReward": {
+      "title": "Recompensa",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["discount", "free_service", "gift", "vip"] },
+        "points_required": { "type": "number" },
+        "value": { "type": "number" },
+        "is_active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["business_id", "name", "points_required", "type"]
+    },
+    "LoyaltyLevel": {
+      "title": "Nível de Fidelidade",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "min_points": { "type": "number" },
+        "benefit_description": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["business_id", "name", "min_points"]
+    },
+    "LoyaltyMission": {
+      "title": "Missão de Fidelidade",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "target": { "type": "integer" },
+        "reward_points": { "type": "number" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["business_id", "name", "target", "reward_points"]
+    },
+    "ClientMissionProgress": {
+      "title": "Progresso de Missão",
+      "type": "object",
+      "properties": {
+        "mission_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "business_id": { "type": "string" },
+        "current_value": { "type": "integer" },
+        "is_completed": { "type": "boolean" },
+        "completed_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "LoyaltyBalance": {
+      "title": "Saldo de Fidelidade",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "balance": { "type": "number" },
+        "total_earned": { "type": "number" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "LoyaltyReferral": {
+      "title": "Indicação",
+      "type": "object",
+      "properties": {
+        "business_id": { "type": "string" },
+        "referrer_phone": { "type": "string" },
+        "referred_phone": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "LoyaltyRedemption": {
+      "title": "Resgate de Fidelidade",
+      "type": "object",
+      "properties": {
+        "reward_id": { "type": "string" },
+        "code": { "type": "string" },
+        "client_id": { "type": "string" },
+        "is_used": { "type": "boolean" },
+        "used_at": { "type": "string", "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reward_id", "code", "client_id", "is_used"]
+    },
+    "ProcessingJob": {
+      "title": "Processing Job",
+      "description": "Fila de processamento assíncrona para Auto-Healing.",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "processing", "failed", "completed"] },
+        "retryCount": { "type": "integer" },
+        "maxRetries": { "type": "integer" },
+        "error": { "type": "string" },
+        "payload": { "type": "object" },
+        "nextRetryAt": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessId", "type", "status", "retryCount", "maxRetries", "payload"]
+    },
+    "LearningInsight": {
+      "title": "Learning Insight",
+      "description": "Insight gerado pelo sistema de Machine Learning",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["error", "ux", "performance"] },
+        "severity": { "type": "string", "enum": ["low", "medium", "critical"] },
+        "metric": { "type": "string" },
+        "metricValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "applied", "rejected"] },
+        "suggestedAction": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "appliedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessId", "title", "description", "category", "severity", "status"]
+    },
+    "MarketingCampaign": {
+      "title": "Marketing Campaign",
+      "description": "Campanha de marketing gerada e gerenciada pela IA",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "title": { "type": "string" },
+        "objective": { "type": "string", "enum": ["reactivation", "fill_slots", "upsell", "loyalty"] },
+        "targetAudience": { "type": "string" },
+        "targetClientIds": { "type": "array", "items": { "type": "string" } },
+        "messageTemplate": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "approved", "running", "completed", "paused"] },
+        "metrics": {
+           "type": "object",
+           "properties": {
+               "sent": { "type": "integer" },
+               "opened": { "type": "integer" },
+               "replied": { "type": "integer" },
+               "converted": { "type": "integer" }
+           }
+        },
+        "isAutoGenerated": { "type": "boolean" },
+        "sendAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessId", "title", "objective", "status", "targetClientIds", "messageTemplate"]
+    },
+    "MarketingConfig": {
+      "title": "Marketing Config",
+      "description": "Configurações de limites e IA para campanhas de marketing",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "isAutoPilot": { "type": "boolean" },
+        "dailySendLimit": { "type": "integer" },
+        "daysBetweenCampaigns": { "type": "integer" }
+      },
+      "required": ["businessId", "isAutoPilot", "dailySendLimit", "daysBetweenCampaigns"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Usuários do ecossistema e definições de permissão global (admin, user)."
+    },
+    "/marketing_configs/{configId}": {
+      "schema": "MarketingConfig",
+      "description": "Configurações de motor de marketing."
+    },
+    "/marketing_campaigns/{campaignId}": {
+      "schema": "MarketingCampaign",
+      "description": "Campanhas de marketing geradas pela IA."
+    },
+    "/learning_insights/{insightId}": {
+      "schema": "LearningInsight",
+      "description": "Insights gerados pelo sistema de IA (Módulo 3)"
+    },
+    "/processing_queue/{jobId}": {
+      "schema": "ProcessingJob",
+      "description": "Lista de jobs de processamento (Módulo 3 Auto-Healing)."
+    },
+    "/discounts/{discountId}": {
+      "schema": "Discount",
+      "description": "Cupons de desconto globais."
+    },
+    "/user_offers/{offerId}": {
+      "schema": "UserOffer",
+      "description": "Ofertas específicas vinculadas a gatilhos comportamentais."
+    },
+    "/analytics_events/{eventId}": {
+      "schema": "object",
+      "description": "Logs de eventos para tracking de conversão."
+    },
+    "/businesses/{businessId}": {
+      "schema": "Business",
+      "description": "Lista de estabelecimentos cadastrados."
+    },
+    "/profiles/{userId}": {
+      "schema": "Profile",
+      "description": "Perfis de usuários."
+    },
+    "/services/{serviceId}": {
+      "schema": "Service",
+      "description": "Serviços cadastrados."
+    },
+    "/professionals/{professionalId}": {
+      "schema": "Professional",
+      "description": "Profissionais cadastrados."
+    },
+    "/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Histórico de agendamentos."
+    },
+    "/units/{unitId}": {
+      "schema": "Unit",
+      "description": "Unidades do negócio."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Base de clientes."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Coleção de avaliações."
+    },
+    "/working_hours/{hourId}": {
+      "schema": "WorkingHour",
+      "description": "Configuração de horários."
+    },
+    "/fixed_client_slots/{slotId}": {
+      "schema": "FixedClientSlot",
+      "description": "Slots de clientes fixos."
+    },
+    "/loyalty_configs/{configId}": {
+      "schema": "LoyaltyConfig",
+      "description": "Configuração de fidelidade por negócio."
+    },
+    "/loyalty_points/{pointId}": {
+      "schema": "LoyaltyPoints",
+      "description": "Histórico de pontos ganhos por clientes."
+    },
+    "/loyalty_rewards/{rewardId}": {
+      "schema": "LoyaltyReward",
+      "description": "Recompensas disponíveis para resgate."
+    },
+    "/loyalty_redemptions/{redemptionId}": {
+      "schema": "LoyaltyRedemption",
+      "description": "Histórico de resgates realizados."
+    },
+    "/loyalty_levels/{levelId}": {
+      "schema": "LoyaltyLevel",
+      "description": "Níveis de fidelidade configurados."
+    },
+    "/loyalty_missions/{missionId}": {
+      "schema": "LoyaltyMission",
+      "description": "Missões disponíveis."
+    },
+    "/loyalty_mission_progress/{progressId}": {
+      "schema": "ClientMissionProgress",
+      "description": "Acompanhamento de progresso em missões."
+    },
+    "/loyalty_balances/{balanceId}": {
+      "schema": "LoyaltyBalance",
+      "description": "Saldo consolidado de pontos do cliente."
+    },
+    "/loyalty_referrals/{referralId}": {
+      "schema": "LoyaltyReferral",
+      "description": "Acompanhamento de indicações."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Histórico de notificações."
+    },
+    "/style_gallery/{itemId}": {
+      "schema": "StyleGalleryItem",
+      "description": "Portfolio de trabalhos."
+    },
+    "/instagram_posts/{postId}": {
+      "schema": "InstagramPost",
+      "description": "Cache de posts do Instagram para exibição no feed."
+    }
+  }
+}
