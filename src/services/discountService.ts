@@ -38,19 +38,7 @@ export interface UserOffer {
 export const DiscountService = {
   // Busca um cupom global pelo código
   async validateCoupon(code: string): Promise<Discount | null> {
-    const uppercaseCode = code.toUpperCase();
-    
-    // Marketing/Demo Fallbacks
-    if (uppercaseCode === 'START30') {
-      return {
-        id: 'promo_start30',
-        code: 'START30',
-        type: 'percentage',
-        value: 30,
-        current_uses: 0,
-        is_active: true
-      } as Discount;
-    }
+    const uppercaseCode = code.trim().toUpperCase();
 
     try {
       const q = query(

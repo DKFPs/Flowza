@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { doc, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -56,17 +56,35 @@ const OnboardingWizard = () => {
     const defaultPlan = PLANS[PlanId.FREE];
 
     try {
+      // Configuração Global de Trial
+      let trialDays = 0;
+      let trialPlanIdConfig = PlanId.PREMIUM;
+      try {
+        const settingsDoc = await getDoc(doc(db, "platform_settings", "global"));
+        if (settingsDoc.exists()) {
+           if (settingsDoc.data().trial_days) trialDays = Number(settingsDoc.data().trial_days);
+           if (settingsDoc.data().trial_plan_id) trialPlanIdConfig = settingsDoc.data().trial_plan_id;
+        }
+      } catch(e) {
+        console.warn("Trial config unreadable", e);
+      }
+
+      // Se tiver trial, usa os limites configurados (ex: Premium ou Pro)
+      const initialPlanId = trialDays > 0 ? trialPlanIdConfig : PlanId.FREE;
+      const initialPlan = PLANS[initialPlanId];
+
+      const trialExpiresAt = trialDays > 0 ? new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000) : null;
+
       // 1. Create Business
       const bizRef = await addDoc(collection(db, "businesses"), {
         ...biz,
         owner_id: user.uid,
-        plan_id: PlanId.FREE,
-        subscription_status: "active",
-        limit_appointments: defaultPlan.limits.maxAppointments,
-        limit_professionals: defaultPlan.limits.maxProfessionals,
-        limit_services: defaultPlan.limits.maxServices,
-        limit_units: defaultPlan.limits.maxUnits,
-        usage_appointments: 0,
+        plan_id: initialPlanId,
+        subscription_status: trialDays > 0 ? "trialing" : "active",
+        trial_expires_at: trialExpiresAt,
+                limit_professionals: initialPlan.limits.professionalsLimit,
+        limit_services: initialPlan.limits.servicesLimit,
+                usage_appointments: 0,
         usage_professionals: 1,
         usage_services: 1,
         usage_units: 0,

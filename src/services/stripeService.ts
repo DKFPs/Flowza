@@ -3,6 +3,8 @@ export const StripeService = {
     priceId: string;
     customerEmail?: string;
     discountCode?: string;
+    businessId?: string;
+    planId?: string;
   }) {
     const response = await fetch("/api/checkout", {
       method: "POST",

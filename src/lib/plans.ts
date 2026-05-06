@@ -2,25 +2,28 @@
 import { PlanId } from "@/types";
 export { PlanId };
 
-export interface PlanLimit {
-  maxAppointments: number;
-  maxProfessionals: number;
-  maxServices: number;
-  maxUnits: number;
-  hasWaitlist: boolean;
-  hasLoyalty: boolean;
-  hasRecurring: boolean;
-  hasAdvancedCustomization: boolean;
-  hasReminders: boolean;
-  hasAnalytics: boolean;
-  hasPrioritySupport: boolean;
-  hasSmartCampaigns: boolean;
-  hasInstagram: boolean;
-  hasApiKeys: boolean;
-  hasCustomDomain: boolean;
+export interface PlanLimits {
+  professionalsLimit: number; // 999 for unlimited
+  servicesLimit: number; // 999 for unlimited
+  customDomain: boolean;
+  automation: "none" | "basic" | "full";
+  analytics: "none" | "basic" | "advanced";
+  ai: boolean;
+  brandingFlowza: boolean;
+  whatsappIntegration: "none" | "basic" | "full";
+  instagramIntegration: boolean;
+  reviews: boolean;
+  // extras
+  buffer?: boolean;
+  socialProof?: boolean;
+  smartScheduling?: boolean;
+  aiMarketing?: boolean;
+  whiteLabelPartial?: boolean;
+  multiUnit?: boolean;
+  prioritySupport?: boolean;
 }
 
-export const PLANS = {
+export const PLANS: Record<PlanId, { id: PlanId, name: string, price: number, stripePriceIdMonthly: string | null, stripePriceIdAnnually: string | null, isRecommended?: boolean, limits: PlanLimits }> = {
   [PlanId.FREE]: {
     id: PlanId.FREE,
     name: 'Free',
@@ -28,45 +31,36 @@ export const PLANS = {
     stripePriceIdMonthly: null,
     stripePriceIdAnnually: null,
     limits: {
-      maxAppointments: 30,
-      maxProfessionals: 1,
-      maxServices: 3,
-      maxUnits: 1,
-      hasWaitlist: false,
-      hasLoyalty: false,
-      hasRecurring: false,
-      hasAdvancedCustomization: false,
-      hasReminders: false,
-      hasAnalytics: false,
-      hasPrioritySupport: false,
-      hasSmartCampaigns: false,
-      hasInstagram: false,
-      hasApiKeys: false,
-      hasCustomDomain: false,
+      professionalsLimit: 1,
+      servicesLimit: 3,
+      customDomain: false,
+      automation: "none",
+      analytics: "none",
+      ai: false,
+      brandingFlowza: true,
+      whatsappIntegration: "none",
+      instagramIntegration: false,
+      reviews: false,
     },
   },
   [PlanId.PRO]: {
     id: PlanId.PRO,
     name: 'Pro',
     price: 97,
-    stripePriceIdMonthly: 'price_1TRht8LnvMLPfJUGkD8Ytmfj',
-    stripePriceIdAnnually: 'price_1TRhxBLnvMLPfJUGUycmWlsH',
+    stripePriceIdMonthly: 'price_1TTV5NLnvMLPfJUGtr1Ypkkm',
+    stripePriceIdAnnually: null,
     limits: {
-      maxAppointments: 150,
-      maxProfessionals: 1,
-      maxServices: 10,
-      maxUnits: 1,
-      hasWaitlist: true,
-      hasLoyalty: false,
-      hasRecurring: false,
-      hasAdvancedCustomization: false,
-      hasReminders: true,
-      hasAnalytics: false,
-      hasPrioritySupport: false,
-      hasSmartCampaigns: false,
-      hasInstagram: true,
-      hasApiKeys: false,
-      hasCustomDomain: false,
+      professionalsLimit: 5,
+      servicesLimit: 999, // unlimited
+      customDomain: false,
+      automation: "basic",
+      analytics: "basic",
+      ai: false,
+      brandingFlowza: true,
+      whatsappIntegration: "basic",
+      instagramIntegration: false,
+      reviews: false,
+      buffer: true,
     },
   },
   [PlanId.BUSINESS]: {
@@ -74,48 +68,77 @@ export const PLANS = {
     name: 'Business',
     price: 197,
     isRecommended: true,
-    stripePriceIdMonthly: 'price_1TRhtYLnvMLPfJUGFibDaKw4',
-    stripePriceIdAnnually: 'price_1TRhyDLnvMLPfJUGAcGiAawT',
+    stripePriceIdMonthly: 'price_1TTV5aLnvMLPfJUGvRFC87OU',
+    stripePriceIdAnnually: null,
     limits: {
-      maxAppointments: 500,
-      maxProfessionals: 5,
-      maxServices: 999, // unlimited
-      maxUnits: 3,
-      hasWaitlist: true,
-      hasLoyalty: true,
-      hasRecurring: true,
-      hasAdvancedCustomization: true,
-      hasReminders: true,
-      hasAnalytics: true,
-      hasPrioritySupport: true,
-      hasSmartCampaigns: false,
-      hasInstagram: true,
-      hasApiKeys: true,
-      hasCustomDomain: true,
+      professionalsLimit: 999, // unlimited
+      servicesLimit: 999, // unlimited
+      customDomain: true,
+      automation: "full",
+      analytics: "advanced",
+      ai: false,
+      brandingFlowza: true,
+      whatsappIntegration: "full",
+      instagramIntegration: true,
+      reviews: true,
+      socialProof: true,
+      smartScheduling: true,
     },
   },
   [PlanId.PREMIUM]: {
     id: PlanId.PREMIUM,
     name: 'Premium',
     price: 297,
-    stripePriceIdMonthly: 'price_1TRhtyLnvMLPfJUGW9V9ECyw',
-    stripePriceIdAnnually: 'price_1TRhygLnvMLPfJUGTTf2pypj',
+    stripePriceIdMonthly: 'price_1TTV1sLnvMLPfJUGluNzgczX',
+    stripePriceIdAnnually: null,
     limits: {
-      maxAppointments: 9999, // unlimited
-      maxProfessionals: 999, // unlimited
-      maxServices: 999,
-      maxUnits: 99,
-      hasWaitlist: true,
-      hasLoyalty: true,
-      hasRecurring: true,
-      hasAdvancedCustomization: true,
-      hasReminders: true,
-      hasAnalytics: true,
-      hasPrioritySupport: true,
-      hasSmartCampaigns: true,
-      hasInstagram: true,
-      hasApiKeys: true,
-      hasCustomDomain: true,
+      professionalsLimit: 999, // unlimited
+      servicesLimit: 999, // unlimited
+      customDomain: true,
+      automation: "full",
+      analytics: "advanced",
+      ai: true,
+      aiMarketing: true,
+      brandingFlowza: false,
+      whatsappIntegration: "full",
+      instagramIntegration: true,
+      reviews: true,
+      socialProof: true,
+      smartScheduling: true,
+      whiteLabelPartial: true,
+      multiUnit: true,
+      prioritySupport: true,
     },
   },
+};
+
+export const checkFeatureAccess = (planId: PlanId, feature: keyof PlanLimits, requiredValue?: any): boolean => {
+  const plan = PLANS[planId] || PLANS[PlanId.FREE];
+  const value = plan.limits[feature];
+  
+  if (requiredValue !== undefined) {
+    // Handling enum escalations
+    if (feature === "automation" || feature === "whatsappIntegration") {
+      const levels = ["none", "basic", "full"];
+      return levels.indexOf(value as string) >= levels.indexOf(requiredValue);
+    }
+    if (feature === "analytics") {
+      const levels = ["none", "basic", "advanced"];
+      return levels.indexOf(value as string) >= levels.indexOf(requiredValue);
+    }
+    return value === requiredValue;
+  }
+  
+  return !!value;
+};
+
+export const checkLimit = (planId: PlanId, type: "professionals" | "services", currentCount: number): boolean => {
+  const plan = PLANS[planId] || PLANS[PlanId.FREE];
+  if (type === "professionals") {
+    return currentCount < plan.limits.professionalsLimit;
+  }
+  if (type === "services") {
+    return currentCount < plan.limits.servicesLimit;
+  }
+  return false;
 };

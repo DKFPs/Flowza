@@ -131,7 +131,7 @@ const Services = () => {
 
   const handleOpenNew = () => {
     setForm({ id: "", name: "", duration_minutes: "30", price: "0", description: "", image_url: "", file: null });
-    if (usage.services >= limits.maxServices && limits.maxServices < 999) {
+    if (usage.services >= limits.servicesLimit && limits.servicesLimit < 999) {
       setUpgradeModalOpen(true);
     } else {
       setDialogOpen(true);
@@ -144,7 +144,7 @@ const Services = () => {
         <div>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Serviços</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            <span className="font-bold text-primary">{usage.services}</span> de <span className="font-bold">{limits.maxServices >= 999 ? "ilimitados" : limits.maxServices}</span> utilizados
+            <span className="font-bold text-primary">{usage.services}</span> de <span className="font-bold">{limits.servicesLimit >= 999 ? "ilimitados" : limits.servicesLimit}</span> utilizados
           </p>
         </div>
         <Button onClick={handleOpenNew} className="h-10 px-5 rounded-xl gap-2 bg-primary shadow-lg shadow-primary/20">
@@ -152,7 +152,7 @@ const Services = () => {
         </Button>
       </div>
 
-      {usage.services >= limits.maxServices && limits.maxServices < 999 && (
+      {usage.services >= limits.servicesLimit && limits.servicesLimit < 999 && (
         <div className="bg-primary/5 border border-primary/20 p-4 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 text-primary">
             <Zap className="w-5 h-5 fill-current" />

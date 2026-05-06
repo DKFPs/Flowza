@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarIcon, Trash2, Clock, User, Scissors, MoreVertical, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarIcon, Trash2, Clock, User, Scissors, MoreVertical, ChevronLeft, ChevronRight, Filter, Search } from "lucide-react";
 import { 
   collection, 
   query, 
@@ -12,6 +12,7 @@ import {
   updateDoc,
   orderBy,
   serverTimestamp,
+  limit,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreUtils";
@@ -30,7 +31,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { LoyaltyService } from "@/services/loyaltyService";
+import { enqueueJob } from "@/lib/queue";
 import { Badge } from "@/components/ui/badge";
 
 const statusColors: Record<string, string> = {
@@ -58,19 +70,35 @@ const Appointments = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [date, setDate] = useState<Date>(new Date());
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [professionalFilter, setProfessionalFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showAllDates, setShowAllDates] = useState(false);
 
   // Fetch appointments for the selected date
   const { data: appointments = [], isLoading } = useQuery({
-    queryKey: ["appointments", business?.id, format(date, "yyyy-MM-dd")],
+    queryKey: ["appointments", business?.id, showAllDates ? "all" : format(date, "yyyy-MM-dd")],
     queryFn: async () => {
       if (!business?.id) return [];
       
-      const q = query(
-        collection(db, "appointments"),
-        where("business_id", "==", business.id),
-        where("appointment_date", "==", format(date, "yyyy-MM-dd")),
-        orderBy("start_time", "asc")
-      );
+      let q;
+      if (showAllDates) {
+        q = query(
+          collection(db, "appointments"),
+          where("business_id", "==", business.id),
+          orderBy("appointment_date", "desc"),
+          orderBy("start_time", "desc"),
+          limit(100)
+        );
+      } else {
+        q = query(
+          collection(db, "appointments"),
+          where("business_id", "==", business.id),
+          where("appointment_date", "==", format(date, "yyyy-MM-dd")),
+          orderBy("start_time", "asc"),
+          limit(50)
+        );
+      }
       
       const snap = await getDocs(q);
       const appts = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
@@ -80,9 +108,9 @@ const Appointments = () => {
       const serviceIds = [...new Set(appts.map(a => a.service_id).filter(Boolean))];
 
       const [clientsSnap, profsSnap, svcsSnap] = await Promise.all([
-        clientIds.length > 0 ? getDocs(query(collection(db, "clients"), where("__name__", "in", clientIds))) : Promise.resolve({ docs: [] }),
-        profIds.length > 0 ? getDocs(query(collection(db, "professionals"), where("__name__", "in", profIds))) : Promise.resolve({ docs: [] }),
-        serviceIds.length > 0 ? getDocs(query(collection(db, "services"), where("__name__", "in", serviceIds))) : Promise.resolve({ docs: [] })
+        clientIds.length > 0 ? getDocs(query(collection(db, "clients"), where("business_id", "==", business.id), where("__name__", "in", clientIds.slice(0, 30)), limit(50))) : Promise.resolve({ docs: [] }),
+        profIds.length > 0 ? getDocs(query(collection(db, "professionals"), where("business_id", "==", business.id), where("__name__", "in", profIds.slice(0, 30)), limit(50))) : Promise.resolve({ docs: [] }),
+        serviceIds.length > 0 ? getDocs(query(collection(db, "services"), where("business_id", "==", business.id), where("__name__", "in", serviceIds.slice(0, 30)), limit(50))) : Promise.resolve({ docs: [] })
       ]);
 
       const clientsMap = Object.fromEntries(clientsSnap.docs.map(d => [d.id, d.data().name]));
@@ -106,6 +134,14 @@ const Appointments = () => {
       await updateDoc(doc(db, "appointments", id), {
         status,
         updated_at: serverTimestamp()
+      });
+
+      // Módulo 3 — Fila de Processamento (Auto-Healing Queue Async)
+      // Dispara webhook de evento para o motor de automação caso configurado (Ex: no-show, completed)
+      await enqueueJob({
+         type: 'trigger_playbook_automation',
+         payload: { aptId: id, status, clientName: appointment.client_name, clientPhone: appointment.client_phone, serviceName: appointment.service_name },
+         businessId: business?.id || ''
       });
 
       if (status === 'completed') {
@@ -149,6 +185,30 @@ const Appointments = () => {
 
   const isToday = format(date, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
 
+  // Fetch all professionals for the filter
+  const { data: professionals = [] } = useQuery({
+    queryKey: ["professionals", business?.id],
+    queryFn: async () => {
+      if (!business?.id) return [];
+      const snap = await getDocs(query(collection(db, "professionals"), where("business_id", "==", business.id)));
+      return snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+    },
+    enabled: !!business?.id,
+  });
+
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter((apt: any) => {
+      const matchStatus = statusFilter === "all" || apt.status === statusFilter;
+      const matchProf = professionalFilter === "all" || apt.professional_id === professionalFilter;
+      const q = searchTerm.toLowerCase();
+      const matchSearch = !searchTerm || 
+        apt.client_name?.toLowerCase().includes(q) ||
+        apt.service_name?.toLowerCase().includes(q);
+      
+      return matchStatus && matchProf && matchSearch;
+    });
+  }, [appointments, statusFilter, professionalFilter, searchTerm]);
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -158,23 +218,75 @@ const Appointments = () => {
         </div>
         
         <div className="flex items-center gap-2 bg-card p-1 rounded-2xl border border-border shadow-sm">
-          <Button variant="ghost" size="icon" onClick={prevDay} className="h-9 w-9 rounded-xl">
+          <Button variant="ghost" size="icon" onClick={prevDay} className="h-9 w-9 rounded-xl" disabled={showAllDates}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" className="h-9 px-4 rounded-xl gap-2 text-sm font-bold">
+              <Button variant="ghost" className="h-9 px-4 rounded-xl gap-2 text-sm font-bold" disabled={showAllDates}>
                 <CalendarIcon className="h-4 w-4 text-primary" />
-                {isToday ? "Hoje" : format(date, "dd 'de' MMM", { locale: ptBR })}
+                {showAllDates ? "Todas as datas" : (isToday ? "Hoje" : format(date, "dd 'de' MMM", { locale: ptBR }))}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="end">
-              <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} locale={ptBR} className="p-3" />
+              <Calendar mode="single" selected={date} onSelect={(d) => { d && setDate(d); setShowAllDates(false); }} locale={ptBR} className="p-3" />
             </PopoverContent>
           </Popover>
-          <Button variant="ghost" size="icon" onClick={nextDay} className="h-9 w-9 rounded-xl">
+          <Button variant="ghost" size="icon" onClick={nextDay} className="h-9 w-9 rounded-xl" disabled={showAllDates}>
             <ChevronRight className="w-4 h-4" />
           </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-2xl border border-border shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input 
+              placeholder="Buscar por cliente ou serviço..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 rounded-xl"
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+            <Filter className="w-4 h-4" />
+            Filtros:
+          </div>
+          <div className="min-w-[150px]">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="rounded-xl border-border bg-background">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="all">Todos os status</SelectItem>
+                <SelectItem value="scheduled">Agendado</SelectItem>
+                <SelectItem value="pending">Pendente</SelectItem>
+                <SelectItem value="confirmed">Confirmado</SelectItem>
+                <SelectItem value="in_progress">Em Andamento</SelectItem>
+                <SelectItem value="completed">Concluído</SelectItem>
+                <SelectItem value="cancelled">Cancelado</SelectItem>
+                <SelectItem value="no_show">Faltou</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-[200px]">
+            <Select value={professionalFilter} onValueChange={setProfessionalFilter}>
+              <SelectTrigger className="rounded-xl border-border bg-background">
+                <SelectValue placeholder="Profissional" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="all">Todos os profissionais</SelectItem>
+                {professionals.map((prof) => (
+                  <SelectItem key={prof.id} value={prof.id}>{prof.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <Switch id="all-dates" checked={showAllDates} onCheckedChange={setShowAllDates} />
+          <Label htmlFor="all-dates">Exibir de todas as datas</Label>
         </div>
       </div>
 
@@ -195,9 +307,20 @@ const Appointments = () => {
             Voltar para Hoje
           </Button>
         </div>
+      ) : filteredAppointments.length === 0 ? (
+        <div className="text-center py-24 bg-card rounded-3xl border border-dashed border-border">
+          <div className="bg-primary/5 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Filter className="w-8 h-8 text-primary opacity-20" />
+          </div>
+          <h3 className="font-bold text-lg">Nenhum agendamento</h3>
+          <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-1">Nenhum agendamento encontrado para os filtros selecionados.</p>
+          <Button variant="outline" className="mt-6 rounded-xl border-primary color-primary" onClick={() => { setStatusFilter("all"); setProfessionalFilter("all"); }}>
+            Limpar Filtros
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {appointments.map((apt: any) => (
+          {filteredAppointments.map((apt: any) => (
             <div 
               key={apt.id} 
               className="bg-card border border-border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-primary/20 transition-all flex items-center justify-between group"

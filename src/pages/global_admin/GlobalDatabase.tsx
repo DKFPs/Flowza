@@ -19,7 +19,7 @@ const COLLECTIONS = [
 
 export default function GlobalDatabase() {
   const [selectedCol, setSelectedCol] = useState(COLLECTIONS[0]);
-  const [docs, setDocs] = useState<any[]>([]);
+  const [docs, setDocs] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function fetchDocs() {

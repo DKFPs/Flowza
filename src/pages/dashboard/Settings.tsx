@@ -8,7 +8,9 @@ import {
   updateDoc, 
   doc, 
   deleteDoc,
-  limit 
+  limit,
+  setDoc,
+  serverTimestamp
 } from "firebase/firestore";
 import { deleteUser } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
@@ -817,9 +819,9 @@ const Settings = () => {
           {/* Instagram Integration */}
           <TabsContent value="instagram">
             <PlanGuard 
-              feature="hasInstagram" 
+              feature="instagramIntegration" 
               label="Instagram Feed"
-              targetPlan={PlanId.PRO}
+              targetPlan={PlanId.BUSINESS}
             >
               {business && (
                 <InstagramIntegration 
@@ -832,7 +834,7 @@ const Settings = () => {
 
           <TabsContent value="apis">
             <PlanGuard 
-              feature="hasApiKeys" 
+              feature="automation" 
               label="Chaves de API Externas"
               targetPlan={PlanId.BUSINESS}
             >
@@ -1136,7 +1138,7 @@ const Settings = () => {
 
           {/* Avançado */}
           <TabsContent value="advanced" className="bg-card rounded-xl border border-border p-6 space-y-4">
-            <PlanGuard feature="hasAdvancedCustomization" label="Personalização CSS" targetPlan={PlanId.BUSINESS}>
+            <PlanGuard feature="whiteLabelPartial" label="Personalização CSS" targetPlan={PlanId.BUSINESS}>
               <div>
                 <label className="text-sm font-medium mb-1 block">CSS Customizado</label>
                 <p className="text-xs text-muted-foreground mb-2">

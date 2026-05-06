@@ -253,6 +253,7 @@ const StyleGallery = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          businessId,
           imageUrl: base64,
           galleryStyles: styles || [],
         }),
@@ -370,7 +371,7 @@ const StyleGallery = () => {
       </Dialog>
 
       {/* Style Simulator */}
-      <StyleSimulator
+      <StyleSimulator businessId={businessId}
         open={simOpen}
         onOpenChange={setSimOpen}
         galleryStyles={gallery.map(g => ({ title: g.title, description: g.description }))}

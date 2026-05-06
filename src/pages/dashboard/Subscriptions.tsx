@@ -88,7 +88,7 @@ const Subscriptions = () => {
   };
 
   return (
-    <PlanGuard feature="hasRecurring" label="Assinaturas Recorrentes" targetPlan={PlanId.BUSINESS}>
+    <PlanGuard feature="automation" label="Assinaturas Recorrentes" targetPlan={PlanId.BUSINESS}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">Assinaturas</h1>

@@ -1,14 +1,14 @@
 
 import { useState, ReactNode } from "react";
 import { useBusiness } from "@/contexts/BusinessContext";
-import { PlanLimit } from "@/lib/plans";
+import { PlanLimits } from "@/lib/plans";
 import { PlanId } from "@/types";
 import { UpgradeModal } from "./UpgradeModal";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlanGuardProps {
-  feature: keyof PlanLimit;
+  feature: keyof PlanLimits;
   children: ReactNode;
   fallback?: ReactNode;
   className?: string;

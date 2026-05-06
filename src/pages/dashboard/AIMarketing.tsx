@@ -15,13 +15,13 @@ import { FeatureLock } from "@/components/dashboard/MonetizationComponents";
 import { PlanId } from "@/types";
 
 export default function AIMarketing() {
-  const { business, plan } = useBusiness();
+  const { business, plan , limits } = useBusiness();
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAutoPilot, setIsAutoPilot] = useState(false);
   
-  const isEligible = plan?.id === PlanId.PREMIUM;
+  const isEligible = limits?.aiMarketing;
   
   // Limites
   const [dailySendLimit, setDailySendLimit] = useState(100);

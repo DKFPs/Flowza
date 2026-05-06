@@ -21,8 +21,8 @@ export const PricingGrid = () => {
           <div 
             key={plan.id}
             className={cn(
-              "relative bg-card rounded-2xl border flex flex-col p-6 transition-all duration-300",
-              isBusiness ? "border-primary shadow-xl ring-1 ring-primary scale-105 z-10" : "border-border hover:border-border-hover shadow-sm",
+              "relative bg-card rounded-2xl border flex flex-col p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+              isBusiness ? "border-primary shadow-lg ring-1 ring-primary scale-105 z-10 animate-soft-pulse hover:shadow-primary/20" : "border-border hover:border-primary/50 shadow-sm",
               isCurrent && !isBusiness && "ring-2 ring-muted-foreground/20"
             )}
           >

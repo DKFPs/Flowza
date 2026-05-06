@@ -10,7 +10,7 @@ export default function GlobalMetrics() {
       clients: 0,
       appointments: 0,
   });
-  const [businessesList, setBusinessesList] = useState<any[]>([]);
+  const [businessesList, setBusinessesList] = useState<Record<string, unknown>[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<string>("all");
 
   useEffect(() => {

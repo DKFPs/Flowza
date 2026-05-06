@@ -116,6 +116,8 @@
         "business_id": { "type": "string" },
         "client_id": { "type": "string" },
         "service_id": { "type": "string" },
+        "additional_service_ids": { "type": "array", "items": { "type": "string" } },
+        "total_price": { "type": "number" },
         "professional_id": { "type": "string" },
         "appointment_date": { "type": "string", "format": "date" },
         "start_time": { "type": "string" },

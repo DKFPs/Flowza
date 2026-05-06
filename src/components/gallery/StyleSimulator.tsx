@@ -10,9 +10,10 @@ interface StyleSimulatorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   galleryStyles?: { title: string; description?: string }[];
+  businessId?: string;
 }
 
-const StyleSimulator = ({ open, onOpenChange, galleryStyles }: StyleSimulatorProps) => {
+const StyleSimulator = ({ open, onOpenChange, galleryStyles, businessId }: StyleSimulatorProps) => {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
@@ -43,6 +44,7 @@ const StyleSimulator = ({ open, onOpenChange, galleryStyles }: StyleSimulatorPro
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        businessId,
         imageUrl: clientImage,
         styleDescription: styleInput || undefined,
       }),

@@ -136,10 +136,10 @@ const Units = () => {
     e.preventDefault();
     if (!business) return;
 
-    if (!form.id && usage.units >= limits.maxUnits) {
+    if (!form.id && usage.units >= (limits.multiUnit ? 999 : 1)) {
       toast({ 
         title: "Limite de unidades atingido", 
-        description: `Seu plano atual permite apenas ${limits.maxUnits} unidade(s).`,
+        description: `Seu plano atual permite apenas ${(limits.multiUnit ? 999 : 1)} unidade(s).`,
         variant: "destructive"
       });
       return;
@@ -303,7 +303,7 @@ const Units = () => {
             </div>
           )}
 
-          {usage.units >= limits.maxUnits && limits.maxUnits < 999 && (
+          {usage.units >= (limits.multiUnit ? 999 : 1) && (limits.multiUnit ? 999 : 1) < 999 && (
             <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <Zap className="w-5 h-5 text-primary" />

@@ -5,20 +5,23 @@ import {
   collection, 
   query, 
   where, 
-  getDocs, 
+  getDocs,
+  getDoc,
+  doc, 
   limit 
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   LayoutDashboard, Calendar, Scissors, Users, MapPin, UserCircle, Settings, LogOut, Menu, X,
   BarChart3, Coins, CreditCard, ClipboardCheck, Star, Bell, Image, Activity, Gift, CalendarClock,
-  Sparkles, Zap, Brain, ShieldCheck, MessageCircle, Lock
+  Sparkles, Zap, Brain, ShieldCheck, MessageCircle, Lock, Share2, Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HelpGuide } from "@/components/dashboard/HelpGuide";
 import { UpgradeTrigger } from "@/components/dashboard/UpgradeTrigger";
 import { PromoBanner } from "@/components/dashboard/PromoBanner";
+import { TrialBanner } from "@/components/dashboard/TrialBanner";
 import { WelcomeTrigger } from "@/components/dashboard/WelcomeTrigger";
 import { InactivityTrigger } from "@/components/dashboard/InactivityTrigger";
 import { BottomNav } from "@/components/dashboard/BottomNav";
@@ -41,24 +44,28 @@ const navItems = [
   { to: "/dashboard/reviews", icon: Star, label: "Avaliações" },
   { to: "/dashboard/notifications", icon: Bell, label: "Notificações" },
   { to: "/dashboard/queue", icon: Activity, label: "Fila de Mensagens" },
+  { to: "/dashboard/automations", icon: Zap, label: "Playbooks & Automações", highlight: true },
+  { to: "/dashboard/integrations", icon: Share2, label: "Integrações & Escala", highlight: true },
   { to: "/dashboard/gallery", icon: Image, label: "Galeria" },
   { to: "/dashboard/forecast", icon: Activity, label: "Previsão" },
   { to: "/dashboard/ai-power", icon: Brain, label: "AI Power Center", highlight: true },
   { to: "/dashboard/rewards", icon: Gift, label: "Recompensas" },
   { to: "/dashboard/schedule", icon: CalendarClock, label: "Agenda & Horários" },
   { to: "/dashboard/marketing", icon: MessageCircle, label: "AI Marketing" },
+  { to: "/dashboard/seo", icon: Target, label: "Posicionamento SEO", highlight: true },
   { to: "/dashboard/settings", icon: Settings, label: "Configurações" },
   { to: "/dashboard/plans", icon: Sparkles, label: "Planos & Upgrade", highlight: true },
 ];
 
 const Dashboard = () => {
   const { user, loading: authLoading, signOut, isGlobalAdmin } = useAuth();
-  const { plan } = useBusiness();
+  const { plan, limits } = useBusiness();
   const navigate = useNavigate();
 
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [businessName, setBusinessName] = useState("");
+  const [enabledTabs, setEnabledTabs] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -67,15 +74,26 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
     
-    const fetchBiz = async () => {
+    const fetchBizAndConfig = async () => {
       const bizQuery = query(collection(db, "businesses"), where("owner_id", "==", user.uid), limit(1));
       const bizSnap = await getDocs(bizQuery);
       if (!bizSnap.empty) {
         setBusinessName(bizSnap.docs[0].data().name);
       }
+
+      try {
+        const featuresDoc = await getDoc(doc(db, "platform_settings", "features"));
+        if (featuresDoc.exists() && featuresDoc.data().enabled_tabs) {
+          setEnabledTabs(featuresDoc.data().enabled_tabs);
+        } else {
+          setEnabledTabs({});
+        }
+      } catch (e) {
+        setEnabledTabs({});
+      }
     };
     
-    fetchBiz();
+    fetchBizAndConfig();
   }, [user]);
 
   if (authLoading) {
@@ -95,7 +113,11 @@ const Dashboard = () => {
     { to: "/dashboard/schedule", icon: CalendarClock, label: "Horários" },
     { to: "/dashboard/clients", icon: UserCircle, label: "Clientes" },
     { to: "/dashboard/settings", icon: Settings, label: "Ajustes" },
-  ];
+  ].filter(item => {
+     if (!enabledTabs) return true;
+     const tabId = item.to === "/dashboard" ? "overview" : item.to.replace("/dashboard/", "");
+     return enabledTabs[tabId] !== false;
+  });
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -125,18 +147,30 @@ const Dashboard = () => {
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
+            // Check global admin feature toggles
+            if (enabledTabs) {
+               const tabId = item.to === "/dashboard" ? "overview" : item.to.replace("/dashboard/", "");
+               if (enabledTabs[tabId] === false) return null;
+            }
+
             // Hide plans/subscriptions if already business/premium
             if (plan?.id === PlanId.PREMIUM || plan?.id === PlanId.BUSINESS) {
               if (item.to === "/dashboard/plans" || item.to === "/dashboard/subscriptions") return null;
             }
             
+            
             let restricted = false;
-            if (["/dashboard/ai-power", "/dashboard/queue", "/dashboard/rewards", "/dashboard/loyalty"].includes(item.to)) {
-              restricted = plan?.id !== PlanId.PREMIUM && plan?.id !== PlanId.BUSINESS;
+            const hasAdv = limits?.automation !== 'none' || limits?.ai;
+            if (['/dashboard/ai-power', '/dashboard/queue'].includes(item.to)) {
+              restricted = !limits?.ai && limits?.automation === 'none';
             }
-            if (item.to === "/dashboard/marketing") {
-              restricted = plan?.id !== PlanId.PREMIUM;
+            if (['/dashboard/rewards', '/dashboard/loyalty'].includes(item.to)) {
+              restricted = !limits?.reviews && !limits?.socialProof;
             }
+            if (item.to === '/dashboard/marketing') {
+              restricted = !limits?.aiMarketing;
+            }
+
 
             return (
               <Link
@@ -185,6 +219,7 @@ const Dashboard = () => {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
+        <TrialBanner />
         <PromoBanner />
         <UpgradeTrigger />
         <WelcomeTrigger />

@@ -6,7 +6,7 @@ import { Brain, Sparkles, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function GlobalLearning() {
-  const [insights, setInsights] = useState<any[]>([]);
+  const [insights, setInsights] = useState<Record<string, unknown>[]>([]);
 
   useEffect(() => {
     async function fetchInsights() {

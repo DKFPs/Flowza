@@ -1,72 +1,156 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useBusiness } from '@/contexts/BusinessContext';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+import { PlanGuard } from '@/components/dashboard/PlanGuard';
+import { PlanId } from '@/types';
+import { RefreshCw, Save } from 'lucide-react';
 
 const AdminSEOSettings: React.FC = () => {
-  const [title, setTitle] = useState("Meu Negócio - Agendamento Online");
-  const [desc, setDesc] = useState("Agende seus horários online com praticidade e rapidez. Atendimento de alta qualidade focado em você.");
-  const plan = "BUSINESS"; // Mock
+  const { business, plan, limits } = useBusiness();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [configs, setConfigs] = useState({
+    seoTitle: "Meu Negócio - Agendamento Online",
+    seoDescription: "Agende seus horários online com praticidade e rapidez. Atendimento de alta qualidade focado em você.",
+    googleAnalytics: "",
+    googleTagManager: "",
+    metaPixel: "",
+    tiktokPixel: ""
+  });
+
+  const isEligible = limits?.customDomain;
+
+  useEffect(() => {
+    if (!business?.id) return;
+    const loadConfigs = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "business_integrations", business.id));
+        if (docSnap.exists() && docSnap.data()) {
+          setConfigs({
+            seoTitle: docSnap.data().seoTitle || `Agendamento - ${business.name}`,
+            seoDescription: docSnap.data().seoDescription || "Agende seus horários.",
+            googleAnalytics: docSnap.data().googleAnalytics || "",
+            googleTagManager: docSnap.data().googleTagManager || "",
+            metaPixel: docSnap.data().metaPixel || "",
+            tiktokPixel: docSnap.data().tiktokPixel || ""
+          });
+        }
+      } catch (e) {
+        console.error("Error loading SEO:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadConfigs();
+  }, [business?.id]);
+
+  const saveConfigs = async () => {
+    if (!business?.id) return;
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "business_integrations", business.id), configs, { merge: true });
+      toast.success("Configurações de SEO e Tracking salvas!");
+    } catch (e) {
+       console.error("Erro ao salvar:", e);
+       toast.error("Erro ao salvar configurações.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 flex justify-center"><RefreshCw className="w-8 h-8 animate-spin text-primary" /></div>;
+  }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <header className="mb-10">
-        <h1 className="text-3xl font-bold text-gray-900">Configurações de SEO</h1>
-        <p className="text-gray-500">Otimize como seu negócio aparece no Google e redes sociais.</p>
-        <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-          PLANO {plan}
-        </div>
-      </header>
-
-      <div className="grid gap-8">
-        {/* Preview do Google */}
-        <section className="bg-white p-6 border rounded-xl shadow-sm">
-          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Preview do Google</h2>
-          <div className="max-w-lg">
-            <div className="text-blue-800 text-xl font-medium hover:underline cursor-pointer truncate">
-              {title}
-            </div>
-            <div className="text-green-700 text-sm mb-1">
-              https://seu-saas.com/barbearia-do-italo
-            </div>
-            <div className="text-gray-600 text-sm line-clamp-2">
-              {desc}
-            </div>
-          </div>
-        </section>
-
-        {/* Editor */}
-        <section className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title</label>
-            <input 
-              type="text" 
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={plan === 'FREE'}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-black outline-none disabled:bg-gray-50"
-            />
-            {plan === 'FREE' && <p className="mt-1 text-xs text-red-500">Disponível apenas em planos pagos.</p>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description</label>
-            <textarea 
-              rows={3}
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              disabled={plan === 'FREE'}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-black outline-none disabled:bg-gray-50"
-            />
-          </div>
-
-          <div className="bg-blue-50 p-4 rounded-lg flex gap-3 text-blue-800 text-sm">
-            <span>💡</span>
-            <p><strong>Dica SEO:</strong> Use palavras-chave como o nome do seu bairro ou cidade para atrair clientes locais.</p>
-          </div>
-
-          <button className="bg-black text-white px-8 py-3 rounded-lg font-bold hover:shadow-lg transition-all">
-            Salvar Alterações
-          </button>
-        </section>
+    <div className="space-y-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Configurações de SEO & Rastreamento</h1>
+        <p className="text-gray-500 mt-2">Otimize a indexação de sua página nas ferramentas de busca e acompanhe acessos.</p>
       </div>
+
+      <PlanGuard feature="customDomain" label="Configurações de SEO Avançado" targetPlan={PlanId.BUSINESS}>
+        <div className="grid gap-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Meta Tags</CardTitle>
+              <CardDescription>Como sua página de agendamento aparece nos resultados do Google</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Título da Página (SEO Title)</label>
+                  <Input 
+                    value={configs.seoTitle} 
+                    onChange={(e) => setConfigs(prev => ({...prev, seoTitle: e.target.value}))}
+                    placeholder={`Ex: ${business?.name} - Agendamento`}
+                  />
+              </div>
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Descrição da Página (Meta Description)</label>
+                  <Textarea 
+                    value={configs.seoDescription} 
+                    onChange={(e) => setConfigs(prev => ({...prev, seoDescription: e.target.value}))}
+                    placeholder="Insira uma breve descrição sobre seus serviços..."
+                  />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pixels e Rastreamento</CardTitle>
+              <CardDescription>Adicione scripts para acompanhar métricas e tráfego</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Google Analytics (G-XXXXXXX)</label>
+                  <Input 
+                    value={configs.googleAnalytics} 
+                    onChange={(e) => setConfigs(prev => ({...prev, googleAnalytics: e.target.value}))}
+                    placeholder="ID de Medição do GA4"
+                  />
+              </div>
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Meta Pixel (Facebook)</label>
+                  <Input 
+                    value={configs.metaPixel} 
+                    onChange={(e) => setConfigs(prev => ({...prev, metaPixel: e.target.value}))}
+                    placeholder="ID do seu Pixel"
+                  />
+              </div>
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">TikTok Pixel</label>
+                  <Input 
+                    value={configs.tiktokPixel} 
+                    onChange={(e) => setConfigs(prev => ({...prev, tiktokPixel: e.target.value}))}
+                    placeholder="ID do Pixel no TikTok"
+                  />
+              </div>
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Google Tag Manager (GTM-XXXXX)</label>
+                  <Input 
+                    value={configs.googleTagManager} 
+                    onChange={(e) => setConfigs(prev => ({...prev, googleTagManager: e.target.value}))}
+                    placeholder="ID do contêiner GTM"
+                  />
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+              <Button onClick={saveConfigs} disabled={saving} size="lg">
+                  {saving ? <RefreshCw className="w-5 h-5 animate-spin mr-2" /> : <Save className="w-5 h-5 mr-2" />}
+                  Salvar Configurações
+              </Button>
+          </div>
+        </div>
+      </PlanGuard>
     </div>
   );
 };

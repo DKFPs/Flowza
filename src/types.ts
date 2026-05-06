@@ -37,6 +37,7 @@ export interface InstagramConfig {
   username?: string;
   expires_at: number; // timestamp
   is_active: boolean;
+  is_simulation?: boolean;
 }
 
 export interface AICampaignResult {
@@ -58,6 +59,7 @@ export interface Business {
   owner_id: string;
   plan_id?: PlanId;
   subscription_status?: 'active' | 'canceled' | 'trialing' | 'past_due';
+  trial_expires_at?: any;
   phone?: string;
   email?: string;
   description?: string;
@@ -136,6 +138,15 @@ export interface Professional {
   avatar_url?: string;
   description?: string;
   is_active: boolean;
+  buffer_minutes?: number;
+  working_hours?: {
+    start: string;
+    end: string;
+  };
+  working_days?: number[]; // e.g., [1, 2, 3, 4, 5] for Mon-Fri
+  breaks?: { start: string; end: string; days?: number[] }[]; // e.g., lunch breaks
+  exceptions?: { date: string; start?: string; end?: string; type: 'off' | 'available' }[]; // Custom dates
+  limits?: { dailyCount?: number }; // Daily limits
 }
 
 export interface Unit {
@@ -160,6 +171,8 @@ export interface Appointment {
   client_id: string;
   professional_id: string;
   service_id: string;
+  additional_service_ids?: string[];
+  total_price?: number;
   appointment_date: string;
   start_time: string;
   end_time: string;
@@ -179,6 +192,10 @@ export interface Client {
   phone?: string;
   email?: string;
   created_at: any;
+  updated_at?: any;
+  appointments_count?: number;
+  total_revenue?: number;
+  last_appointment_date?: any;
 }
 
 export interface Review {

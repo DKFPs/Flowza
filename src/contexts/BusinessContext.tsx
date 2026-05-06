@@ -4,14 +4,14 @@ import { collection, query, where, getDocs, limit, onSnapshot, getCountFromServe
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Business, PlanId } from "@/types";
-import { PLANS, PlanLimit } from "@/lib/plans";
+import { PLANS, PlanLimits } from "@/lib/plans";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreUtils";
 
 interface BusinessContextType {
   business: Business | null;
   loading: boolean;
   plan: typeof PLANS[PlanId];
-  limits: PlanLimit;
+  limits: PlanLimits;
   usage: {
     appointments: number;
     professionals: number;
@@ -19,7 +19,7 @@ interface BusinessContextType {
     units: number;
   };
   refreshBusiness: () => Promise<void>;
-  checkPermission: (feature: keyof PlanLimit) => boolean;
+  checkPermission: (feature: keyof PlanLimits) => boolean;
 }
 
 const BusinessContext = createContext<BusinessContextType | undefined>(undefined);
@@ -74,11 +74,25 @@ export const BusinessProvider = ({ children }: { children: ReactNode }) => {
 
 
 
-  const planIdRaw = business?.plan_id?.toLowerCase() as PlanId;
+  let planIdRaw = business?.plan_id?.toLowerCase() as PlanId;
+  
+  if (business?.subscription_status === 'trialing' && business?.trial_expires_at) {
+    const getExpiryDate = () => {
+      if (typeof business.trial_expires_at.toDate === 'function') {
+        return business.trial_expires_at.toDate();
+      }
+      return new Date(business.trial_expires_at as any);
+    };
+    
+    if (getExpiryDate() < new Date()) {
+      planIdRaw = PlanId.FREE;
+    }
+  }
+
   const currentPlanId = Object.values(PlanId).includes(planIdRaw) ? planIdRaw : PlanId.FREE;
   const currentPlan = PLANS[currentPlanId];
 
-  const checkPermission = (feature: keyof PlanLimit) => {
+  const checkPermission = (feature: keyof PlanLimits) => {
     return !!currentPlan?.limits?.[feature];
   };
 

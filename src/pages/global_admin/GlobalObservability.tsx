@@ -6,7 +6,7 @@ import { AlertTriangle, Activity, CheckCircle, Brain } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function GlobalObservability() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
 
   useEffect(() => {
     async function fetchLogs() {

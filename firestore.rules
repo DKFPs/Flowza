@@ -34,6 +34,24 @@ service cloud.firestore {
     function existing() { return resource.data; }
 
     // Helper para verificar se o usuário é dono do negócio
+    function checkProfLimit(bizId) {
+      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
+      let plan = biz.plan_id == null ? 'FREE' : biz.plan_id;
+      let limitAmount = (plan == 'PREMIUM' || plan == 'premium') ? 999 :
+                  (plan == 'BUSINESS' || plan == 'business') ? 999 :
+                  (plan == 'PRO' || plan == 'pro') ? 5 : 1;
+      let used = biz.usage_professionals == null ? 0 : biz.usage_professionals;
+      return used < limitAmount;
+    }
+
+    function checkServiceLimit(bizId) {
+      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
+      let plan = biz.plan_id == null ? 'FREE' : biz.plan_id;
+      let limitAmount = (plan == 'FREE' || plan == 'free') ? 3 : 999;
+      let used = biz.usage_services == null ? 0 : biz.usage_services;
+      return used < limitAmount;
+    }
+
     function isBizOwner(bizId) {
       let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
       return isSignedIn() && biz != null && biz.owner_id == request.auth.uid;
@@ -47,6 +65,7 @@ service cloud.firestore {
              data.duration is number && data.duration > 0 &&
              (data.description == null || (data.description is string && data.description.size() <= 500));
     }
+
 
     function isValidClient(data) {
       return data.business_id is string && isValidId(data.business_id) &&
@@ -95,14 +114,14 @@ service cloud.firestore {
     // Coleções gerenciadas pelo dono (Professionals, Services, Units, Working Hours)
     match /professionals/{id} {
       allow read: if true; 
-      allow create: if isBizOwner(incoming().business_id) && isValidId(id);
+      allow create: if isBizOwner(incoming().business_id) && isValidId(id) && checkProfLimit(incoming().business_id);
       allow update: if isBizOwner(existing().business_id) && incoming().business_id == existing().business_id;
       allow delete: if isBizOwner(existing().business_id);
     }
 
     match /services/{id} {
       allow read: if true;
-      allow create: if isBizOwner(incoming().business_id) && isValidService(incoming()) && isValidId(id);
+      allow create: if isBizOwner(incoming().business_id) && isValidService(incoming()) && isValidId(id) && checkServiceLimit(incoming().business_id);
       allow update: if isBizOwner(existing().business_id) && 
                       isValidService(incoming()) &&
                       incoming().business_id == existing().business_id;
@@ -129,7 +148,7 @@ service cloud.firestore {
       allow get: if true; 
       allow list: if isGlobalAdmin();
       allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
-      allow list: if request.query.limit <= 50 && request.query.offset == 0; 
+      allow list: if request.query.limit <= 50; 
       
       allow create: if isValidAppointment(incoming()) && isValidId(id);
       allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
@@ -137,16 +156,21 @@ service cloud.firestore {
       allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
     }
 
+    match /daily_schedules/{id} {
+      allow read: if true;
+      allow write: if true; // API books here.
+    }
+
     // Clients: CRM
     match /clients/{clientId} {
       allow get: if isValidId(clientId);
       allow list: if isGlobalAdmin();
       allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
-      allow list: if resource.data.phone != null && resource.data.business_id != null && request.query.limit <= 1;
+      allow list: if request.query.limit <= 1;
       
       allow create: if isValidClient(incoming()) && isValidId(clientId);
       allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at']));
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at', 'appointments_count', 'total_revenue', 'last_appointment_date']));
       allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
     }
 
@@ -196,6 +220,12 @@ service cloud.firestore {
     }
 
     match /loyalty_mission_progress/{id} {
+      allow read: if true;
+      allow create, update: if true; // allow system functions and owner
+      allow delete: if isBizOwner(existing().business_id);
+    }
+
+    match /loyalty_points/{id} {
       allow read: if true;
       allow create, update: if true; // allow system functions and owner
       allow delete: if isBizOwner(existing().business_id);
@@ -286,14 +316,14 @@ service cloud.firestore {
     // Avaliações
     match /reviews/{id} {
       allow read: if true;
-      allow create: if true; // Permitir que clientes avaliem publicamente
+      allow create: if getPlanUpper(get(/databases/$(database)/documents/businesses/$(request.resource.data.business_id)).data.plan_id) in ["BUSINESS", "PREMIUM"];
       allow update, delete: if false;
     }
 
     // Descontos e Ofertas
     match /discounts/{id} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isGlobalAdmin();
     }
 
     match /user_offers/{id} {
@@ -320,6 +350,21 @@ service cloud.firestore {
       allow create: if isBizOwner(request.resource.data.business_id);
       allow update: if isBizOwner(resource.data.business_id);
       allow delete: if isBizOwner(resource.data.business_id);
+    }
+    
+    match /business_automations/{bizId} {
+      allow read: if isBizOwner(bizId);
+      allow write: if isBizOwner(bizId);
+    }
+    
+    match /business_integrations/{bizId} {
+      allow read: if true; // allow public pages to read pixel ids
+      allow write: if isBizOwner(bizId) && getPlanUpper(get(/databases/$(database)/documents/businesses/$(bizId)).data.plan_id) in ["PRO", "BUSINESS", "PREMIUM"];
+    }
+
+    match /platform_settings/{docId} {
+      allow read: if true;
+      allow write: if isGlobalAdmin();
     }
   }
 }

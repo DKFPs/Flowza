@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { ShieldCheck, Activity, Brain, BarChart, Settings, LogOut, ArrowLeft, Users, Menu, X, ShieldAlert, Database, Building2 } from "lucide-react";
+import { ShieldCheck, Activity, Brain, BarChart, Settings, LogOut, ArrowLeft, Users, Menu, X, ShieldAlert, Database, Building2, Ticket, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const adminGroups = [
@@ -11,6 +11,7 @@ const adminGroups = [
     links: [
       { to: "/admin", icon: BarChart, label: "Home / Métricas" },
       { to: "/admin/tenants", icon: Building2, label: "Tenants & Planos" },
+      { to: "/admin/coupons", icon: Ticket, label: "Cupons Stripe" },
     ]
   },
   {
@@ -24,6 +25,8 @@ const adminGroups = [
     title: "Sistema & Dados",
     links: [
       { to: "/admin/database", icon: Database, label: "Banco de Dados" },
+      { to: "/admin/settings", icon: Settings, label: "Configurações Globais" },
+      { to: "/admin/features", icon: Layers, label: "Controle de Abas" },
       { to: "/admin/ai-learning", icon: Brain, label: "Sistema de IA (Aprendizado)" },
     ]
   },

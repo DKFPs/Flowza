@@ -30,9 +30,13 @@ const Professionals = () => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", specialty: "", description: "", avatar_url: "", file: null as File | null });
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState({ 
+    id: "", name: "", specialty: "", description: "", avatar_url: "", file: null as File | null,
+    buffer_minutes: 0,
+    working_hours_start: "08:00",
+    working_hours_end: "18:00",
+    working_days: [1, 2, 3, 4, 5, 6] // default Mon-Sat
+  });
 
   const fetchData = useCallback(async () => {
     if (!user || !business) return;
@@ -48,8 +52,12 @@ const Professionals = () => {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleOpenNew = () => {
-    setForm({ id: "", name: "", specialty: "", description: "", avatar_url: "", file: null });
-    if (usage.professionals >= limits.maxProfessionals && limits.maxProfessionals < 999) {
+    setForm({ 
+      id: "", name: "", specialty: "", description: "", avatar_url: "", file: null,
+      buffer_minutes: 0, working_hours_start: "08:00", working_hours_end: "18:00",
+      working_days: [1, 2, 3, 4, 5, 6]
+    });
+    if (usage.professionals >= limits.professionalsLimit && limits.professionalsLimit < 999) {
       setUpgradeModalOpen(true);
     } else {
       setDialogOpen(true);
@@ -75,12 +83,17 @@ const Professionals = () => {
 
       const batch = writeBatch(db);
       
+      const working_hours = { start: form.working_hours_start, end: form.working_hours_end };
+
       if (form.id) {
         const profRef = doc(db, "professionals", form.id);
         const updateData: any = {
           name: form.name,
           specialty: form.specialty || null,
           description: form.description || null,
+          buffer_minutes: form.buffer_minutes,
+          working_hours: working_hours,
+          working_days: form.working_days
         };
         if (avatarUrl) {
           updateData.avatar_url = avatarUrl;
@@ -95,6 +108,9 @@ const Professionals = () => {
           description: form.description || null,
           avatar_url: avatarUrl || null,
           is_active: true,
+          buffer_minutes: form.buffer_minutes,
+          working_hours: working_hours,
+          working_days: form.working_days,
           created_at: serverTimestamp()
         });
 
@@ -156,12 +172,12 @@ const Professionals = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Profissionais</h1>
-          <p className="text-sm text-muted-foreground">{usage.professionals} de {limits.maxProfessionals >= 999 ? "ilimitados" : limits.maxProfessionals} utilizados</p>
+          <p className="text-sm text-muted-foreground">{usage.professionals} de {limits.professionalsLimit >= 999 ? "ilimitados" : limits.professionalsLimit} utilizados</p>
         </div>
         <Button onClick={handleOpenNew} className="gap-2"><Plus className="w-4 h-4" />Novo Profissional</Button>
       </div>
 
-      {usage.professionals >= limits.maxProfessionals && limits.maxProfessionals < 999 && (
+      {usage.professionals >= limits.professionalsLimit && limits.professionalsLimit < 999 && (
         <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-warning">
             <AlertTriangle className="w-5 h-5" />
@@ -202,6 +218,10 @@ const Professionals = () => {
                       specialty: p.specialty || "",
                       description: p.description || "",
                       avatar_url: p.avatar_url || "",
+                      buffer_minutes: p.buffer_minutes || 0,
+                      working_hours_start: p.working_hours?.start || "08:00",
+                      working_hours_end: p.working_hours?.end || "18:00",
+                      working_days: p.working_days || [1, 2, 3, 4, 5, 6],
                       file: null
                     });
                     setDialogOpen(true);
@@ -225,6 +245,53 @@ const Professionals = () => {
           <form onSubmit={handleSave} className="space-y-4">
             <div><label className="text-sm font-medium mb-1 block">Nome</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
             <div><label className="text-sm font-medium mb-1 block">Especialidade</label><Input value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} placeholder="Ex: Corte masculino" /></div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">Início Expediente</label>
+                <Input type="time" value={form.working_hours_start} onChange={(e) => setForm({ ...form, working_hours_start: e.target.value })} required />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Término Expediente</label>
+                <Input type="time" value={form.working_hours_end} onChange={(e) => setForm({ ...form, working_hours_end: e.target.value })} required />
+              </div>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-1 block">Intervalo (Minutos após atendimento)</label>
+              <Input type="number" value={form.buffer_minutes} onChange={(e) => setForm({ ...form, buffer_minutes: parseInt(e.target.value) || 0 })} placeholder="0" min="0" />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Dias Atendidos</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 1, label: "Seg" },
+                  { value: 2, label: "Ter" },
+                  { value: 3, label: "Qua" },
+                  { value: 4, label: "Qui" },
+                  { value: 5, label: "Sex" },
+                  { value: 6, label: "Sáb" },
+                  { value: 0, label: "Dom" }
+                ].map(day => (
+                  <label key={day.value} className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-full text-sm cursor-pointer hover:bg-muted transition-colors border border-border">
+                    <input 
+                      type="checkbox" 
+                      className="rounded text-primary focus:ring-primary"
+                      checked={form.working_days.includes(day.value)}
+                      onChange={(e) => {
+                        const newDays = e.target.checked 
+                          ? [...form.working_days, day.value]
+                          : form.working_days.filter(d => d !== day.value);
+                        setForm({ ...form, working_days: newDays });
+                      }}
+                    />
+                    {day.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div><label className="text-sm font-medium mb-1 block">Descrição</label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Breve biografia ou apresentação..." /></div>
             <div>
               <label className="text-sm font-medium mb-1 block">Foto (Opcional)</label>

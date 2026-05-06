@@ -7,7 +7,7 @@ import { ShieldCheck, HeartPulse, RefreshCw } from "lucide-react";
 import { logAdminAction } from "@/lib/adminLogger";
 
 export default function GlobalAutoHealing() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
   const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {

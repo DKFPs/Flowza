@@ -17,7 +17,7 @@
     "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e"
   },
   "dependencies": {
-    "@google/genai": "^1.51.0",
+    "@google/genai": "^1.52.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",

@@ -44,12 +44,12 @@ import WhatsAppSimulator from "@/components/dashboard/WhatsAppSimulator";
 import { FeatureLock } from "@/components/dashboard/MonetizationComponents";
 
 const AIPowerCenter = () => {
-  const { business, refreshBusiness, plan } = useBusiness();
+  const { business, refreshBusiness, plan , limits } = useBusiness();
   const { toast } = useToast();
   const [saveLoading, setSaveLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'decision' | 'playbooks' | 'results'>('decision');
 
-  const isEligible = plan?.id === PlanId.PREMIUM || plan?.id === PlanId.BUSINESS;
+  const isEligible = limits?.ai;
 
   // Fetch real data
   const { data: appointments = [], isLoading: isLoadingApts } = useQuery({

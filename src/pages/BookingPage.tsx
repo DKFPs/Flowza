@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, memo, lazy, Suspense } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { logger } from "@/lib/logger";
@@ -18,7 +18,8 @@ import {
   doc,
   serverTimestamp,
   increment,
-  runTransaction
+  runTransaction,
+  onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { normalizePhone, normalizeName, isValidPhone } from "@/lib/normalization";
@@ -37,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Business, Service, Professional, Unit, Review } from "@/types";
 import StyleSimulator from "@/components/gallery/StyleSimulator";
 import InstagramFeed from "@/components/public/InstagramFeed";
+import { TrackingScripts } from "@/components/public/TrackingScripts";
 import { useSocialProof } from "@/hooks/useSocialProof";
 import { PRESET_THEMES } from "@/lib/themes";
 
@@ -186,6 +188,7 @@ const BookingPageSkeleton = () => (
     const slug = customSlug || params.slug;
     const [searchParams, setSearchParams] = useSearchParams();
     const { toast } = useToast();
+    const queryClient = useQueryClient();
     const [simOpen, setSimOpen] = useState(false);
     const [aiOpen, setAiOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -412,6 +415,16 @@ const BookingPageSkeleton = () => (
   const [paymentTiming, setPaymentTiming] = useState<string>('full');
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
   const [isPaid, setIsPaid] = useState(false);
+  const [additionalServices, setAdditionalServices] = useState<Service[]>([]);
+
+  const toggleAdditionalService = useCallback((s: Service) => {
+    setAdditionalServices(prev => {
+      if (prev.find(a => a.id === s.id)) {
+        return prev.filter(a => a.id !== s.id);
+      }
+      return [...prev, s];
+    });
+  }, []);
 
   // Timer logic for urgency
   useEffect(() => {
@@ -445,7 +458,6 @@ const BookingPageSkeleton = () => (
     queryKey: ["day_appointments", business?.id, selectedProfessional?.id, date ? format(date, "yyyy-MM-dd") : null],
     queryFn: async () => {
       if (!date || !selectedProfessional || !business) return [];
-      setIsSyncing(true);
       const q = query(
         collection(db, "appointments"),
         where("business_id", "==", business.id),
@@ -462,15 +474,35 @@ const BookingPageSkeleton = () => (
         console.warn("Offline ou erro no servidor, caindo para cache local...", err);
         const snap = await getDocs(q);
         return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Appointment));
-      } finally {
-        setIsSyncing(false);
       }
     },
     enabled: !!date && !!selectedProfessional && !!business,
   });
 
+  useEffect(() => {
+    if (!date || !selectedProfessional || !business) return;
+    const q = query(
+      collection(db, "appointments"),
+      where("business_id", "==", business.id),
+      where("professional_id", "==", selectedProfessional.id),
+      where("appointment_date", "==", format(date, "yyyy-MM-dd")),
+      where("status", "!=", "cancelled"),
+      limit(50)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const updatedAppointments = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Appointment));
+      queryClient.setQueryData(
+        ["day_appointments", business.id, selectedProfessional.id, format(date, "yyyy-MM-dd")],
+        updatedAppointments
+      );
+    }, (error) => {
+      console.error("onSnapshot error: ", error);
+    });
+    return () => unsubscribe();
+  }, [date, selectedProfessional, business, queryClient]);
+
   const bookMutation = useMutation({
-    mutationFn: async ({ service, professional, date, time, name, phone, recurrence, paymentTiming }: { service: Service; professional: Professional; date: Date; time: string; name: string; phone: string; recurrence: string | null; paymentTiming?: string }) => {
+    mutationFn: async ({ service, professional, date, time, name, phone, recurrence, paymentTiming, additionalServicesList, dynamicDiscount }: { service: Service; professional: Professional; date: Date; time: string; name: string; phone: string; recurrence: string | null; paymentTiming?: string, additionalServicesList?: Service[], dynamicDiscount?: number }) => {
       if (!business) return;
 
       try {
@@ -487,131 +519,205 @@ const BookingPageSkeleton = () => (
           throw new Error("Por favor, informe seu nome completo.");
         }
 
-        // MÓDULO 1 & 2 & 5 — TRANSACTION C/ RETRY INTELIGENTE E FALLBACK
-        const executeTransaction = async () => runTransaction(db, async (transaction) => {
-          // === Mapeamento de Refs ===
-          const bizRef = doc(db, "businesses", business.id);
-          const clientRef = doc(db, "clients", clientId);
-          
-          const aptDateStr = format(date, "yyyy-MM-dd");
-          const startTimeStr = time + ":00";
-          const slotId = `${business.id}_${professional.id}_${aptDateStr.replace(/-/g, "")}_${startTimeStr.replace(/:/g, "")}`;
-          const aptRef = doc(db, "appointments", slotId);
+        // Determine occurrences based on recurrence
+        const datesToSchedule: Date[] = [date];
+        if (recurrence === 'weekly') {
+          for(let i=1; i<4; i++) { const d = new Date(date); d.setDate(d.getDate() + i*7); datesToSchedule.push(d); }
+        } else if (recurrence === 'biweekly') {
+          for(let i=1; i<4; i++) { const d = new Date(date); d.setDate(d.getDate() + i*14); datesToSchedule.push(d); }
+        } else if (recurrence === 'monthly') {
+          for(let i=1; i<12; i++) { const d = new Date(date); d.setMonth(d.getMonth() + i); datesToSchedule.push(d); }
+        }
 
-          // === Execução de TODAS as Leituras (Reads) antes das Escritas ===
-          const bizDoc = await transaction.get(bizRef);
-          const clientSnap = await transaction.get(clientRef);
-          const aptSnap = await transaction.get(aptRef);
+        let firstResult: any = null;
 
-          // 1. Verificar Limites e Status do Negócio
-          if (!bizDoc.exists()) throw new Error("Estabelecimento não encontrado.");
-          
-          const bizData = bizDoc.data();
-          if (slug !== "demo" && bizData.limit_appointments && (bizData.usage_appointments || 0) >= bizData.limit_appointments) {
-            throw new Error("Limite de agendamentos atingido para este estabelecimento.");
-          }
+        for (const targetDate of datesToSchedule) {
+           const aptDateStr = format(targetDate, "yyyy-MM-dd");
+           // Skipping availability backend check for recurrences for speed, 
+           // but `runTransaction` still protects against exact collisions.
+           if (targetDate === date) {
+              const response = await fetch("/api/availability", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  businessId: business.id,
+                  professionalId: professional.id,
+                  date: aptDateStr,
+                  duration: (service.duration || service.duration_minutes || 30) + (additionalServicesList?.reduce((acc, s) => acc + (s.duration || s.duration_minutes || 0), 0) || 0),
+                  checkOnlyTime: time
+                })
+              });
 
-          // 2. Verificar Concorrência de Horário (Anti-Double Booking & Módulo 5: Idempotência Global)
-          if (aptSnap.exists() && aptSnap.data().status !== 'cancelled') {
-            const data = aptSnap.data();
-            if (data.client_id === clientId) {
-              return { aptId: slotId, isOnlinePayment: data.payment_timing !== 'on_site', alreadyExists: true };
-            }
-            console.warn(`[FLOWZA_CONCURRENCY_ERROR] Colisão de horário em ${slotId}. Negado para usuário: ${clientId}`);
-            throw new Error("Este horário acabou de ser ocupado por outra pessoa. Por favor, tente outro horário imediato.");
-          }
+              if (response.ok) {
+                 const availData = await response.json();
+                 if (availData.conflict) {
+                    throw new Error("Este horário ou intervalo acabou de ser ocupado. Por favor, tente outro.");
+                 }
+              }
+           }
 
-          let isNewClient = false;
+           const executeTransaction = async () => runTransaction(db, async (transaction) => {
+             // === Mapeamento de Refs ===
+             const bizRef = doc(db, "businesses", business.id);
+             const clientRef = doc(db, "clients", clientId);
+             
+             const startTimeStr = time + ":00";
+             const slotId = `${business.id}_${professional.id}_${aptDateStr.replace(/-/g, "")}_${startTimeStr.replace(/:/g, "")}`;
+             const aptRef = doc(db, "appointments", slotId);
 
-          // === Escritas (Writes) ===
-          // 3. Gerenciar Cliente (Idempotente via ID Fixo)
-          if (!clientSnap.exists()) {
-            transaction.set(clientRef, {
-              business_id: business.id,
-              name: cleanName,
-              phone: cleanPhone,
-              created_at: serverTimestamp(),
-              updated_at: serverTimestamp()
-            });
-            isNewClient = true;
-          } else {
-            transaction.update(clientRef, { name: cleanName, updated_at: serverTimestamp() });
-          }
+             // === Execução de TODAS as Leituras (Reads) antes das Escritas ===
+             const bizDoc = await transaction.get(bizRef);
+             const clientSnap = await transaction.get(clientRef);
+             const aptSnap = await transaction.get(aptRef);
 
-          // 4. Configurar Tempos
-          const duration = service.duration || service.duration_minutes || 30;
-          const endMinutes = parseInt(time.split(":")[0]) * 60 + parseInt(time.split(":")[1]) + duration;
-          const endTimeStr = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}:00`;
+             // 1. Verificar Limites e Status do Negócio
+             if (!bizDoc.exists()) throw new Error("Estabelecimento não encontrado.");
+             
+             const bizData = bizDoc.data();
+             if (slug !== "demo" && bizData.limit_appointments && (bizData.usage_appointments || 0) >= bizData.limit_appointments) {
+               throw new Error("Limite de agendamentos atingido para este estabelecimento.");
+             }
 
-          const isOnlinePayment = business.enable_payment_setup && paymentTiming !== 'on_site';
-          const initialStatus = isOnlinePayment ? "pending_payment" : (business.auto_confirm ? "confirmed" : "pending");
+             // 2. Verificar Concorrência de Horário
+             if (aptSnap.exists() && aptSnap.data().status !== 'cancelled') {
+               const data = aptSnap.data();
+               if (data.client_id === clientId) {
+                 return { aptId: slotId, isOnlinePayment: data.payment_timing !== 'on_site', alreadyExists: true, targetDate };
+               }
+               
+               if (targetDate !== date) {
+                 // For recurrences, soft fail log and continue
+                 console.warn(`Colisão em recorrência ${slotId}. Ignorado.`);
+                 return { skip: true };
+               } else {
+                 throw new Error("Este horário acabou de ser ocupado por outra pessoa. Por favor, tente outro horário imediato.");
+               }
+             }
 
-          // 5. Criar Agendamento
-          transaction.set(aptRef, {
-            business_id: business.id,
-            client_id: clientId,
-            professional_id: professional.id,
-            service_id: service.id,
-            appointment_date: aptDateStr,
-            start_time: startTimeStr,
-            end_time: endTimeStr,
-            status: initialStatus,
-            recurrence_type: recurrence || null,
-            payment_status: "unpaid",
-            payment_timing: paymentTiming || 'on_site',
-            created_at: serverTimestamp(),
-            updated_at: serverTimestamp(),
-            client_name: cleanName,
-            client_phone: cleanPhone,
-            service_name_snapshot: service.name       
-          });
+             let isNewClient = false;
 
-          // 6. Módulo 3 — Fila de Processamento (Auto-Healing Queue Async)
-          await enqueueJob({
-             type: 'sync_appointment_effects',
-             payload: { aptId: slotId, paymentTiming, isOnlinePayment },
-             businessId: business.id
-          });
+             // 4. Configurar Tempos
+             const mainDuration = service.duration || service.duration_minutes || 30;
+             const additionalDuration = additionalServicesList?.reduce((acc, s) => acc + (s.duration || s.duration_minutes || 0), 0) || 0;
+             const duration = mainDuration + additionalDuration;
 
-          // Single update to bizRef
-          if (isNewClient) {
-            transaction.update(bizRef, { usage_appointments: increment(1), usage_clients: increment(1) });
-          } else {
-            transaction.update(bizRef, { usage_appointments: increment(1) });
-          }
-          
-          return { aptId: slotId, isOnlinePayment };
-        });
+             const endMinutes = parseInt(time.split(":")[0]) * 60 + parseInt(time.split(":")[1]) + duration;
+             const endTimeStr = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}:00`;
 
-        const fallbackTransaction = async (err: unknown) => {
-            const eMsg = err instanceof Error ? err.message : String(err);
-            // Ignorar double booking de salvar no fallback p n criar lixo
-            if (!eMsg.includes("ocupado por outra pessoa") && !eMsg.includes("válido") && !eMsg.includes("completo")) {
-              await enqueueJob({
-                  type: 'fallback_appointment_creation',
-                  payload: { name, phone, date: date.toISOString(), time, serviceId: service.id, professionalId: professional.id, error: eMsg },
-                  businessId: business.id
-              }, 0);
-            }
-            throw err;
-        };
+             let totalPrice = Number(service.price) + (additionalServicesList?.reduce((acc, s) => acc + Number(s.price), 0) || 0);
+             if (dynamicDiscount && dynamicDiscount > 0) {
+               totalPrice = totalPrice - (totalPrice * (dynamicDiscount / 100));
+             }
 
-        const result = await withFallback(
-            () => withRetry(executeTransaction, { operationName: "create_appointment_txn", businessId: business.id }),
-            fallbackTransaction,
-            { operationName: "fallback_appointment", businessId: business.id }
-        );
+             // === Escritas (Writes) ===
+             // 3. Gerenciar Cliente
+             if (!clientSnap.exists()) {
+               transaction.set(clientRef, {
+                 business_id: business.id,
+                 name: cleanName,
+                 phone: cleanPhone,
+                 created_at: serverTimestamp(),
+                 updated_at: serverTimestamp(),
+                 appointments_count: 1,
+                 total_revenue: totalPrice,
+                 last_appointment_date: serverTimestamp()
+               });
+               isNewClient = true;
+             } else {
+               transaction.update(clientRef, { 
+                 name: cleanName, 
+                 updated_at: serverTimestamp(),
+                 appointments_count: increment(1),
+                 total_revenue: increment(totalPrice),
+                 last_appointment_date: serverTimestamp()
+               });
+             }
+
+             const isOnlinePayment = business.enable_payment_setup && paymentTiming !== 'on_site';
+             const initialStatus = isOnlinePayment ? "pending_payment" : (business.auto_confirm ? "confirmed" : "pending");
+
+             // 5. Criar Agendamento
+             transaction.set(aptRef, {
+               business_id: business.id,
+               client_id: clientId,
+               professional_id: professional.id,
+               service_id: service.id,
+               additional_service_ids: additionalServicesList?.map(s => s.id) || [],
+               total_price: totalPrice,
+               appointment_date: aptDateStr,
+               start_time: startTimeStr,
+               end_time: endTimeStr,
+               status: initialStatus,
+               recurrence_type: recurrence || null,
+               payment_status: "unpaid",
+               payment_timing: paymentTiming || 'on_site',
+               created_at: serverTimestamp(),
+               updated_at: serverTimestamp(),
+               client_name: cleanName,
+               client_phone: cleanPhone,
+               service_name_snapshot: service.name + (additionalServicesList?.length ? ` (+${additionalServicesList.length})` : '')
+             });
+
+             // 6. Módulo 3 — Fila de Processamento (Auto-Healing Queue Async)
+             await enqueueJob({
+                type: 'sync_appointment_effects',
+                payload: { aptId: slotId, paymentTiming, isOnlinePayment },
+                businessId: business.id
+             });
+
+             // Single update to bizRef
+             if (isNewClient) {
+               transaction.update(bizRef, { usage_appointments: increment(1), usage_clients: increment(1) });
+             } else {
+               transaction.update(bizRef, { usage_appointments: increment(1) });
+             }
+             
+             return { aptId: slotId, isOnlinePayment };
+           });
+
+           const fallbackTransaction = async (err: unknown) => {
+               const eMsg = err instanceof Error ? err.message : String(err);
+               // Ignorar double booking de salvar no fallback p n criar lixo
+               if (!eMsg.includes("ocupado por outra pessoa") && !eMsg.includes("válido") && !eMsg.includes("completo")) {
+                 await enqueueJob({
+                     type: 'fallback_appointment_creation',
+                     payload: { name, phone, date: targetDate.toISOString(), time, serviceId: service.id, professionalId: professional.id, error: eMsg },
+                     businessId: business.id
+                 }, 0);
+               }
+               throw err;
+           };
+
+           const result = await withFallback(
+               () => withRetry(executeTransaction, { operationName: "create_appointment_txn", businessId: business.id }),
+               fallbackTransaction,
+               { operationName: "fallback_appointment", businessId: business.id }
+           );
+           
+           if (!firstResult) firstResult = result;
+        }
+        
+        // Tracking Escala & Diferenciação (Fase 4)
+        if (typeof window !== 'undefined' && window.fbq) {
+           window.fbq('track', 'Schedule', { value: Number(service.price), currency: 'BRL', content_ids: [service.id], content_type: 'product' });
+        }
+        if (typeof window !== 'undefined' && window.ttq) {
+           window.ttq.track('CompleteRegistration', { value: Number(service.price), currency: 'BRL' });
+        }
+        if (typeof window !== 'undefined' && window.gtag) {
+           window.gtag('event', 'conversion', { 'send_to': 'AW-CONVERSION_ID', value: Number(service.price), currency: 'BRL' });
+        }
 
         // Pós-transaction
         if (slug !== "demo" && clientId) {
            try {
              await LoyaltyService.awardRegistrationPoints(business.id, clientId);
            } catch (e) {
-             logger.warn("Loyalty awarding failed", e);
+             console.warn("Loyalty awarding failed", e);
            }
         }
 
-        return result;
+        return firstResult;
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, "booking_v3_transaction");
       }
@@ -624,12 +730,15 @@ const BookingPageSkeleton = () => (
         isOnlinePayment: data?.isOnlinePayment
       });
 
-      if (data?.isOnlinePayment) {
-        setCheckoutStep('payment');
-        setTimeLeft(600); // 10 minutes timer starts
-      } else {
-        setCheckoutStep('success');
-      }
+      // Provide a slight delay so the user can see the success animation on the button
+      setTimeout(() => {
+        if (data?.isOnlinePayment) {
+          setCheckoutStep('payment');
+          setTimeLeft(600); // 10 minutes timer starts
+        } else {
+          setCheckoutStep('success');
+        }
+      }, 1000);
     },
     onError: (err: Error) => {
       // Módulo 1: Captura de erro em tela principal
@@ -639,16 +748,50 @@ const BookingPageSkeleton = () => (
   });
 
   const availableSlots = useMemo(() => {
-    const bookedStartTimes = dayAppointments.map(a => (a.start_time || "").slice(0, 5));
-    const rawSlots = TIME_SLOTS.filter((s) => !bookedStartTimes.includes(s));
+    // Check working days
+    if (selectedProfessional?.working_days && date && !selectedProfessional.working_days.includes(date.getDay())) {
+       return [];
+    }
+
+    // Check daily limits
+    if (selectedProfessional?.limits?.dailyCount) {
+       const nonCancelled = (dayAppointments || []).filter(a => a.status !== 'cancelled');
+       if (nonCancelled.length >= selectedProfessional.limits.dailyCount) {
+          return [];
+       }
+    }
+
+    // Calculate total duration (main service + additional services)
+    const mainDuration = Number(selectedService?.duration || selectedService?.duration_minutes || 30);
+    const additionalDuration = Array.isArray(additionalServices) ? additionalServices.reduce((acc, s) => acc + Number(s.duration || s.duration_minutes || 0), 0) : 0;
+    const totalDuration = mainDuration + additionalDuration;
+
+    // Use professional's working hours if available, otherwise default to 08:00 - 18:00
+    const workingHours = selectedProfessional?.working_hours || { start: '08:00', end: '18:00' };
+    
+    // Default buffer
+    const buffer = selectedProfessional?.buffer_minutes ? Number(selectedProfessional.buffer_minutes) : 0;
+    
+    const intervalFromDuration = Math.max(15, totalDuration + buffer);
+
+    const rawSlots = AISchedulingService.generateAvailableSlots(
+      workingHours,
+      totalDuration,
+      dayAppointments || [],
+      intervalFromDuration,
+      buffer,
+      selectedProfessional?.breaks,
+      date ? date.getDay() : undefined
+    );
     
     return AISchedulingService.rankSlots(
       rawSlots,
-      dayAppointments,
-      selectedService?.duration || 30,
-      business?.ai_settings
+      dayAppointments || [],
+      totalDuration,
+      business?.ai_settings || undefined
     );
-  }, [dayAppointments, business?.ai_settings, selectedService]);
+  }, [dayAppointments, business?.ai_settings, selectedService, additionalServices, selectedProfessional, date]);
+
 
   const openBooking = useCallback((service?: Service | null) => {
     setSuccess(false);
@@ -667,6 +810,7 @@ const BookingPageSkeleton = () => (
       setSelectedService(null);
       setSelectedProfessional(null);
     }
+    setAdditionalServices([]);
     setTime(null);
     setName("");
     setPhone("");
@@ -817,6 +961,14 @@ const BookingPageSkeleton = () => (
 
   const handleBook = () => {
     if (!selectedService || !selectedProfessional || !date || !time || !name) return;
+    
+    // Check for dynamic pricing discount
+    const selectedSlotInfo = availableSlots.find(s => s.time === time);
+    let discountToApply = 0;
+    if (selectedSlotInfo?.isDiscounted && selectedSlotInfo.discountPercentage) {
+      discountToApply = selectedSlotInfo.discountPercentage;
+    }
+
     bookMutation.mutate({
       service: selectedService,
       professional: selectedProfessional,
@@ -825,12 +977,15 @@ const BookingPageSkeleton = () => (
       name,
       phone,
       recurrence,
-      paymentTiming
+      paymentTiming,
+      additionalServicesList: additionalServices,
+      dynamicDiscount: discountToApply
     });
   };
 
   return (
     <div className="min-h-screen booking-page" style={{ backgroundColor: t.bg, fontFamily: t.fontBody, color: t.text }}>
+      <TrackingScripts businessId={business.id} />
       {/* ─── NAVBAR ─── */}
       <nav
         className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-8 py-3 flex items-center justify-between"
@@ -1099,7 +1254,7 @@ const BookingPageSkeleton = () => (
           )}
         </div>
         
-        <StyleSimulator
+        <StyleSimulator businessId={business?.id}
           open={simOpen}
           onOpenChange={setSimOpen}
           galleryStyles={gallery.map((g) => ({ title: g.title, description: g.description }))}
@@ -1327,9 +1482,20 @@ const BookingPageSkeleton = () => (
       </section>
 
       {/* ─── FOOTER ─── */}
-      <footer className="py-6 px-4 text-center text-sm" style={{ color: t.textMuted, borderTop: `1px solid ${t.text}10` }}>
+      <footer className="py-6 px-4 text-center text-sm pb-24 sm:pb-6" style={{ color: t.textMuted, borderTop: `1px solid ${t.text}10` }}>
         {business.footer_text || `© ${new Date().getFullYear()} ${business.name}. Todos os direitos reservados.`}
       </footer>
+
+      {/* ─── STICKY MOBILE CTA ─── */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent flex justify-center z-40 sm:hidden pointer-events-none pb-8 animate-in slide-in-from-bottom-5">
+         <button 
+           onClick={() => openBooking()} 
+           className="w-full max-w-sm h-14 rounded-full font-black text-lg shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10 pointer-events-auto transform transition-all active:scale-95 flex items-center justify-center gap-2"
+           style={{ backgroundColor: t.primary, color: '#fff' }}
+         >
+           <Sparkles className="w-5 h-5" /> {ctaText}
+         </button>
+      </div>
 
       {/* ─── BOOKING MODAL ─── */}
       <ResponsiveModal open={bookingOpen} onOpenChange={setBookingOpen} title={checkoutStep === "payment" ? "Pagamento Seguro" : "Agendamento Rápido"}>
@@ -1603,12 +1769,48 @@ const BookingPageSkeleton = () => (
                         ))}
                     </div>
                   ) : (
-                    <div className="p-4 bg-primary text-white rounded-2xl flex items-center justify-between shadow-lg animate-in zoom-in-95" style={{ borderRadius: t.radius }}>
-                       <div>
-                         <p className="text-xs font-bold opacity-80 uppercase tracking-widest">Selecionado</p>
-                         <p className="text-lg font-black">{selectedService.name}</p>
-                       </div>
-                       <Check className="w-6 h-6" />
+                    <div className="space-y-4">
+                      <div className="p-4 bg-primary text-white rounded-2xl flex items-center justify-between shadow-lg animate-in zoom-in-95" style={{ borderRadius: t.radius }}>
+                         <div>
+                           <p className="text-xs font-bold opacity-80 uppercase tracking-widest">Selecionado</p>
+                           <p className="text-lg font-black">{selectedService.name}</p>
+                         </div>
+                         <Check className="w-6 h-6" />
+                      </div>
+                      
+                      {/* UPSELL SECTION */}
+                      {services.filter(s => s.id !== selectedService.id).length > 0 && (
+                        <div className="bg-white/5 border border-white/10 p-4 animate-in slide-in-from-top-4" style={{ borderRadius: t.radius }}>
+                          <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                             <Sparkles className="w-4 h-4 text-primary" />
+                             Aproveite e adicione também:
+                          </h4>
+                          <div className="grid grid-cols-1 gap-2">
+                             {services.filter(s => s.id !== selectedService.id).map(s => {
+                               const isSelected = additionalServices.some(as => as.id === s.id);
+                               return (
+                                 <button
+                                   key={s.id}
+                                   onClick={() => toggleAdditionalService(s)}
+                                   className={`flex items-center justify-between p-3 border transition-all text-left ${isSelected ? 'border-primary bg-primary/10' : 'border-white/10 hover:border-white/30'}`}
+                                   style={{ borderRadius: t.radius }}
+                                 >
+                                   <div className="flex flex-col">
+                                     <span className="font-bold text-sm">{s.name}</span>
+                                     <span className="text-[10px] opacity-60">+{s.duration || s.duration_minutes} min</span>
+                                   </div>
+                                   <div className="flex items-center gap-3">
+                                     <span className="font-black text-sm text-primary">R${Number(s.price).toFixed(0)}</span>
+                                     <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${isSelected ? 'bg-primary border-primary text-white' : 'border-white/30'}`}>
+                                       {isSelected && <Check className="w-3 h-3" />}
+                                     </div>
+                                   </div>
+                                 </button>
+                               );
+                             })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
@@ -1627,6 +1829,21 @@ const BookingPageSkeleton = () => (
 
                   {!selectedProfessional ? (
                     <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar -mx-5 px-5">
+                       {professionals.length > 1 && (
+                         <button
+                           onClick={() => {
+                              // Seleciona um aleatoriamente para balanceamento (Automático)
+                              const autoAssign = professionals[Math.floor(Math.random() * professionals.length)];
+                              setSelectedProfessional(autoAssign);
+                           }}
+                           className="flex-shrink-0 w-32 flex flex-col items-center gap-2"
+                         >
+                           <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-primary/30 flex items-center justify-center group active:scale-95 transition-all text-primary bg-primary/10">
+                             <Sparkles className="w-8 h-8" />
+                           </div>
+                           <span className="text-sm font-bold text-center text-primary line-clamp-1">Automático</span>
+                         </button>
+                       )}
                        {professionals.map((p) => (
                          <button
                            key={p.id}
@@ -1683,35 +1900,61 @@ const BookingPageSkeleton = () => (
                         disabled={(d) => {
                           const today = new Date();
                           today.setHours(0, 0, 0, 0);
-                          return d < today || d.getDay() === 0;
+                          
+                          if (d < today) return true;
+                          
+                          // Check exceptions
+                          if (selectedProfessional?.exceptions && Array.isArray(selectedProfessional.exceptions)) {
+                             const dateStr = format(d, "yyyy-MM-dd");
+                             const hasOff = selectedProfessional.exceptions.some(ex => ex.date === dateStr && ex.type === 'off');
+                             if (hasOff) return true;
+                             const hasAvailable = selectedProfessional.exceptions.some(ex => ex.date === dateStr && ex.type === 'available');
+                             if (hasAvailable) return false;
+                          }
+
+                          const dayOfWeek = d.getDay();
+                          if (selectedProfessional?.working_days && Array.isArray(selectedProfessional.working_days)) {
+                            return !selectedProfessional.working_days.includes(dayOfWeek);
+                          }
+                          // Fallback if not set: Assuming Sunday (0) is disabled
+                          return dayOfWeek === 0;
                         }}
                       />
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                        {availableSlots.length > 0 ? (
-                         availableSlots.map((s) => (
-                           <button
-                             key={s.time}
-                             onClick={() => setTime(s.time)}
-                             className="group relative h-16 flex flex-col items-center justify-center transition-all active:scale-95 border border-white/5 overflow-hidden"
-                             style={{ 
-                               backgroundColor: time === s.time ? t.primary : t.secondary + "40",
-                               color: time === s.time ? "#fff" : t.text,
-                               borderRadius: t.radius 
-                             }}
-                           >
-                              {s.label && (
-                                <span className="absolute top-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/20 text-[8px] font-black uppercase tracking-tighter text-primary group-hover:bg-primary group-hover:text-white transition-colors">
-                                  <Sparkles className="w-2 h-2" /> {s.label}
-                                </span>
-                              )}
-                              <span className="text-sm font-bold">{s.time}</span>
-                              {s.score > 40 && (
-                                <span className="text-[9px] opacity-40 font-medium -mt-1 underline decoration-primary/40 decoration-wavy">Sugestão IA</span>
-                              )}
-                           </button>
-                         ))
+                         availableSlots.map((s: any) => {
+                           const isSpecial = s.score > 40 || s.isDiscounted;
+                           return (
+                             <button
+                               key={s.time}
+                               onClick={() => setTime(s.time)}
+                               className={`group relative h-16 flex flex-col items-center justify-center transition-all active:scale-95 border overflow-hidden ${isSpecial ? 'border-primary/40 shadow-[0px_0px_10px_rgba(255,255,255,0.05)]' : 'border-white/5'}`}
+                               style={{ 
+                                 backgroundColor: time === s.time ? t.primary : t.secondary + "40",
+                                 color: time === s.time ? "#fff" : t.text,
+                                 borderRadius: t.radius 
+                               }}
+                             >
+                                {isSpecial && time !== s.time && (
+                                  <div className="absolute inset-0 opacity-20 bg-gradient-to-tr from-primary to-transparent animate-pulse pointer-events-none" />
+                                )}
+                                
+                                {(s.label || s.isDiscounted) && (
+                                  <span className={`absolute top-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter transition-colors ${s.isDiscounted ? 'bg-green-500/20 text-green-500' : 'bg-primary/20 text-primary group-hover:bg-primary group-hover:text-white'}`}>
+                                    {s.isDiscounted ? `-${s.discountPercentage}%` : <><Sparkles className="w-2 h-2" /> {s.label}</>}
+                                  </span>
+                                )}
+                                <span className="text-sm font-bold z-10">{s.time}</span>
+                                {s.score > 40 && (
+                                  <span className="text-[9px] opacity-80 font-bold -mt-1 text-primary z-10 flex items-center gap-1">
+                                    <Sparkles className="w-2 h-2" /> Sugestão IA
+                                  </span>
+                                )}
+                             </button>
+                           );
+                         })
                        ) : (
                          <div className="col-span-full py-6 text-center text-xs opacity-40">Nenhum horário disponível</div>
                        )}
@@ -1756,6 +1999,32 @@ const BookingPageSkeleton = () => (
                       </div>
                    </div>
 
+                   <div className="space-y-4 pt-4 border-t border-white/10">
+                      <h4 className="text-sm font-bold opacity-80" style={{ color: t.text }}>Repetir este agendamento (Opcional)</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                         {[
+                           { value: null, label: 'Não repetir' },
+                           { value: 'weekly', label: 'Toda Semana (4 vzs)' },
+                           { value: 'biweekly', label: 'A cada 15 dias (4 vzs)' },
+                           { value: 'monthly', label: 'Todo Mês (12 vzs)' }
+                         ].map(r => (
+                           <button
+                             key={r.value || 'none'}
+                             onClick={() => setRecurrence(r.value)}
+                             className={`h-12 border text-xs font-bold transition-all ${recurrence === r.value ? 'shadow-[0px_0px_10px_rgba(255,255,255,0.05)]' : 'border-white/5 opacity-60'}`}
+                             style={{ 
+                               backgroundColor: recurrence === r.value ? t.primary : "transparent",
+                               color: recurrence === r.value ? "#ffffff" : t.text,
+                               borderColor: recurrence === r.value ? 'transparent' : 'rgba(255,255,255,0.05)',
+                               borderRadius: t.radius 
+                             }}
+                           >
+                             {r.label}
+                           </button>
+                         ))}
+                      </div>
+                   </div>
+
                    {business.enable_payment_setup && Array.isArray(business.payment_timings) && business.payment_timings.length > 0 && (
                      <div className="space-y-4 pt-4 border-t border-white/10">
                         <h4 className="text-sm font-bold opacity-80" style={{ color: t.text }}>Como você prefere pagar?</h4>
@@ -1786,14 +2055,19 @@ const BookingPageSkeleton = () => (
 
                    <button
                      onClick={handleBook}
-                     disabled={bookMutation.isPending || name.length < 3 || phone.length < 10 || !time}
-                     className="w-full h-20 text-xl font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed group"
+                     disabled={bookMutation.isPending || bookMutation.isSuccess || name.length < 3 || phone.length < 10 || !time}
+                     className="w-full h-20 text-xl font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
                      style={{ backgroundColor: t.primary, color: "#fff", borderRadius: t.radius }}
                    >
                      {bookMutation.isPending ? (
                        <>
                          <Loader2 className="w-8 h-8 animate-spin" />
                          <span>PROCESSANDO...</span>
+                       </>
+                     ) : bookMutation.isSuccess ? (
+                       <>
+                         <Check className="w-8 h-8 animate-in zoom-in spin-in-180 duration-300" />
+                         <span className="animate-in fade-in slide-in-from-right-4 duration-300">CONCLUÍDO!</span>
                        </>
                      ) : (
                        <>

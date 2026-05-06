@@ -50,12 +50,39 @@ export const UpgradeModal = ({ open, onOpenChange, feature, targetPlan = PlanId.
             O que você ganha com o plano {plan.name}:
           </h4>
           <ul className="space-y-3">
-            {[
-              "Agendamentos ilimitados",
-              "Notificações avançadas via WhatsApp",
-              "Sistema de fidelidade e recorrência",
-              "Relatórios detalhados de faturamento",
-              "Suporte prioritário"
+            {targetPlan === PlanId.PRO ? [
+              "Notificações automáticas via WhatsApp",
+              "Lembretes de agendamento por e-mail",
+              "Até 5 profissionais",
+              "Sem anúncios da marca Flowza"
+            ].map((item, i) => (
+              <li key={i} className="flex items-center gap-3 text-sm">
+                <div className="bg-green-500/10 p-1 rounded-full">
+                  <Check className="w-4 h-4 text-green-500" />
+                </div>
+                {item}
+              </li>
+            )) : targetPlan === PlanId.BUSINESS ? [
+              "Tudo do plano PRO, e mais:",
+              "Até 15 profissionais e 30 serviços",
+              "Integração com Instagram",
+              "Sistema de Avaliações",
+              "Automações Avançadas",
+              "Domínio Personalizado"
+            ].map((item, i) => (
+              <li key={i} className="flex items-center gap-3 text-sm">
+                <div className="bg-green-500/10 p-1 rounded-full">
+                  <Check className="w-4 h-4 text-green-500" />
+                </div>
+                {item}
+              </li>
+            )) : [
+              "Tudo do plano Business, e mais:",
+              "Múltiplos locais/unidades",
+              "Profissionais e Serviços Ilimitados",
+              "Marketing via Inteligência Artificial",
+              "Suporte Prioritário",
+              "White-label parcial"
             ].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-sm">
                 <div className="bg-green-500/10 p-1 rounded-full">

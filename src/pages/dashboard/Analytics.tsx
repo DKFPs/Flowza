@@ -111,7 +111,7 @@ const Analytics = () => {
   ];
 
   return (
-    <PlanGuard feature="hasAnalytics" label="Relatórios Avançados" targetPlan={PlanId.BUSINESS}>
+    <PlanGuard feature="analytics" label="Relatórios Avançados" targetPlan={PlanId.BUSINESS}>
       <div className="space-y-8">
         
         {/* Header with Smart Score */}

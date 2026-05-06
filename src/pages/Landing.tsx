@@ -123,10 +123,10 @@ const Landing = () => {
                 <div 
                   key={plan.id}
                   className={cn(
-                    "relative flex flex-col bg-card rounded-3xl p-8 border transition-all duration-500 hover:translate-y-[-8px]",
+                    "relative flex flex-col bg-card rounded-3xl p-8 border transition-all duration-500 hover:translate-y-[-8px] hover:shadow-xl hover:border-primary/50",
                     isBusiness 
-                      ? "border-primary shadow-2xl shadow-primary/10 ring-1 ring-primary/50 bg-gradient-to-b from-primary/[0.02] to-transparent" 
-                      : "border-border hover:border-border-hover shadow-sm"
+                      ? "border-primary shadow-2xl shadow-primary/10 ring-1 ring-primary/50 bg-gradient-to-b from-primary/[0.02] to-transparent animate-soft-pulse hover:shadow-primary/20" 
+                      : "border-border shadow-sm"
                   )}
                 >
                   {isBusiness && (

@@ -84,4 +84,15 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  @keyframes soft-pulse-border {
+    0%, 100% {
+      box-shadow: 0 0 0 0px hsl(var(--primary) / 0.1);
+    }
+    50% {
+      box-shadow: 0 0 20px 4px hsl(var(--primary) / 0.3);
+    }
+  }
+  .animate-soft-pulse {
+    animation: soft-pulse-border 3s ease-in-out infinite;
+  }
 }

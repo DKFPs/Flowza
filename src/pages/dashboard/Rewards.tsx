@@ -52,10 +52,10 @@ interface Redemption {
 
 const Rewards = () => {
   const { user } = useAuth();
-  const { plan } = useBusiness();
+  const { plan , limits } = useBusiness();
   const { toast } = useToast();
   
-  const isEligible = plan?.id === PlanId.PREMIUM || plan?.id === PlanId.BUSINESS;
+  const isEligible = limits?.automation === "full";
   const [businessId, setBusinessId] = useState<string | null>(null);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);

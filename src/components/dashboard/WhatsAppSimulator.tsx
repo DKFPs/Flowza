@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useRef } from "react";
-import { Send, User, CheckCheck, Loader2, Sparkles, Smartphone, Calendar, Clock } from "lucide-react";
+import { Send, Smartphone, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { useBusiness } from "@/contexts/BusinessContext";
+import { Service, Professional } from "@/types";
+import { AIAgentService } from "@/services/aiAgentService";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface Message {
   id: string;
@@ -17,18 +19,47 @@ interface Message {
 }
 
 const WhatsAppSimulator = () => {
+  const { business } = useBusiness();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Olá! Gostaria de agendar um horário para amanhã.',
-      sender: 'client',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
+      text: 'Olá! Sou seu assistente de IA. Como posso ajudar com seu agendamento?',
+      sender: 'ai',
+      timestamp: new Date(),
       status: 'read'
     }
   ]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [aiService, setAiService] = useState<AIAgentService | null>(null);
+
+  const [contextData, setContextData] = useState<{services: Service[], professionals: Professional[]}>({ services: [], professionals: [] });
+
+  useEffect(() => {
+    // Initialize AI Service
+    if (process.env.GEMINI_API_KEY) {
+      setAiService(new AIAgentService());
+    }
+
+    if (business) {
+      // Fetch services and professionals for context
+      const fetchData = async () => {
+        try {
+           const servQ = query(collection(db, "services"), where("business_id", "==", business.id));
+           const profQ = query(collection(db, "professionals"), where("business_id", "==", business.id));
+           const [servSnap, profSnap] = await Promise.all([getDocs(servQ), getDocs(profQ)]);
+           setContextData({
+             services: servSnap.docs.map(d => ({id: d.id, ...d.data()} as Service)),
+             professionals: profSnap.docs.map(d => ({id: d.id, ...d.data()} as Professional))
+           });
+        } catch (e) {
+           console.error("Error fetching context for AI:", e);
+        }
+      };
+      fetchData();
+    }
+  }, [business]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -49,33 +80,90 @@ const WhatsAppSimulator = () => {
 
     setMessages([...messages, newMsg]);
     setInputValue("");
-    processAIResponse(inputValue);
+    processAIResponse([...messages, newMsg]);
   };
 
-  const processAIResponse = (text: string) => {
+  const processAIResponse = async (currentMessages: Message[]) => {
     setIsTyping(true);
     
-    // Simulate AI processing delay
-    setTimeout(() => {
-      let response = "";
-      const lower = text.toLowerCase();
+    if (!aiService || !business) {
+       // Mock fallback
+       setTimeout(() => {
+         let response = "Olá! (A integração IA requer GEMINI_API_KEY). Pode me dizer que horas gostaria para simularmos?";
+         if (currentMessages[currentMessages.length - 1].text.toLowerCase().includes("horário")) {
+            response = "Claro! Tenho horários às 09:30 e 14:00. Qual prefere?";
+         }
+         setMessages(prev => [...prev, {
+           id: Date.now().toString(),
+           text: response,
+           sender: 'ai',
+           timestamp: new Date()
+         }]);
+         setIsTyping(false);
+       }, 1500);
+       return;
+    }
 
-      if (lower.includes("amanhã") || lower.includes("horário")) {
-        response = "Com certeza! Para amanhã tenho os seguintes horários disponíveis: 09:30, 14:00 e 16:30. Algum desses funciona para você?";
-      } else if (lower.includes("09:30") || lower.includes("pode ser")) {
-        response = "Perfeito! Reservado: Consultoria Premium às 09:30. Acabei de enviar o link de confirmação para o seu e-mail. Posso ajudar em algo mais?";
+    try {
+      // Assemble history for Gemini API
+      const history = currentMessages.map(msg => ({
+        role: msg.sender === 'ai' ? 'model' as const : 'user' as const,
+        parts: [{ text: msg.text }]
+      }));
+
+      const response = await aiService.runConversation(
+        history, 
+        business, 
+        contextData.services, 
+        contextData.professionals
+      );
+
+      // Check if function call occurred
+      const functionCalls = response.functionCalls;
+      if (functionCalls && functionCalls.length > 0) {
+        const fc = functionCalls[0];
+        if (fc.name === "checkAvailability") {
+          const availabilityResult = await aiService.executeCheckAvailability(
+             fc.args, 
+             business, 
+             contextData.services, 
+             contextData.professionals
+          );
+          
+          // Reply with the function result
+          const historyWithFunc = [
+            ...history,
+            { role: 'model' as const, parts: [{ functionCall: fc }] },
+            { role: 'user' as const, parts: [{ functionResponse: { name: fc.name, response: availabilityResult } }] }
+          ];
+
+          const followUp = await aiService.runConversation(historyWithFunc, business, contextData.services, contextData.professionals);
+          setMessages(prev => [...prev, {
+             id: Date.now().toString(),
+             text: followUp.text || "Verifiquei os horários.",
+             sender: 'ai',
+             timestamp: new Date()
+          }]);
+        }
       } else {
-        response = "Olá! Eu sou o assistente inteligente da Flowza. Posso ajudar você a agendar, remarcar ou tirar dúvidas sobre nossos serviços. Como posso ajudar hoje?";
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: response.text || "...",
+          sender: 'ai',
+          timestamp: new Date()
+        }]);
       }
-
+    } catch (e) {
+      console.error(e);
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        text: response,
+        text: "Desculpe, tive um problema ao processar sua mensagem.",
         sender: 'ai',
         timestamp: new Date()
       }]);
-      setIsTyping(false);
-    }, 1500);
+    }
+
+    setIsTyping(false);
   };
 
   return (

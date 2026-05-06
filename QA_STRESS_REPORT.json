@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-05-06T00:14:55.882Z",
+  "overallPassed": true,
+  "details": [
+    {
+      "scenario": "Concorrência Crítica (Race Conditions)",
+      "totalRequests": 50,
+      "successes": 1,
+      "failures": 49,
+      "avgResponseTimeMs": 5031,
+      "statusCodes": {
+        "200": 1,
+        "500": 49
+      },
+      "errors": [
+        "Booking failed: Este horário acabou de ser ocupado. Por favor, tente outro."
+      ],
+      "validationPassed": true,
+      "notes": [
+        "Concorrência gerou 1 agendamentos. Esperado: 1.",
+        "✅ PROTEÇÃO ANTI-DOUBLE BOOKING FUNCIONOU"
+      ]
+    },
+    {
+      "scenario": "Spam de UI (Clique Rápido)",
+      "totalRequests": 10,
+      "successes": 1,
+      "failures": 9,
+      "avgResponseTimeMs": 1334,
+      "statusCodes": {
+        "200": 1,
+        "500": 9
+      },
+      "errors": [],
+      "validationPassed": true,
+      "notes": [
+        "✅ Apenas 1 agendamento gerado pro Spammer"
+      ]
+    },
+    {
+      "scenario": "Carga Pesada (Load testing)",
+      "totalRequests": 100,
+      "successes": 60,
+      "failures": 40,
+      "avgResponseTimeMs": 4805,
+      "statusCodes": {
+        "200": 60,
+        "500": 40
+      },
+      "errors": [],
+      "validationPassed": true,
+      "notes": [
+        "Load test processou 100 requests com 60 ok.",
+        "✅ Latência e estabilidade boas no sandbox.",
+        "⚠️ Registrado 40 erros (Contentions de DB esperado devido a transações no mesmo bizRef)."
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import { PLANS, PlanId } from "@/lib/plans";
 import { format } from "date-fns";
 
 export default function GlobalTenants() {
-  const [businesses, setBusinesses] = useState<any[]>([]);
+  const [businesses, setBusinesses] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 

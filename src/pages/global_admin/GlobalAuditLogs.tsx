@@ -6,7 +6,7 @@ import { ShieldAlert, CheckCircle, AlertTriangle, Clock } from "lucide-react";
 import { format } from "date-fns";
 
 export default function GlobalAuditLogs() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
 
   useEffect(() => {
     fetchLogs();

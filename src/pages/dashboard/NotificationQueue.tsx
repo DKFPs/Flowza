@@ -37,10 +37,10 @@ interface QueueJob {
 }
 
 const NotificationQueue = () => {
-  const { business, plan } = useBusiness();
+  const { business, plan , limits } = useBusiness();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const isEligible = plan?.id === PlanId.PREMIUM || plan?.id === PlanId.BUSINESS;
+  const isEligible = limits?.automation === "full";
 
   const { data: jobs = [], isLoading, refetch } = useQuery<QueueJob[]>({
     queryKey: ["notification_queue", business?.id],

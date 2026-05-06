@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { logAdminAction } from "@/lib/adminLogger";
 
 export default function GlobalAdministrators() {
-  const [admins, setAdmins] = useState<any[]>([]);
+  const [admins, setAdmins] = useState<Record<string, unknown>[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [newUid, setNewUid] = useState("");
 

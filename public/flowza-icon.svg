@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Vivid gradient matching the design -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C552FF"/>
+      <stop offset="100%" stop-color="#3A4DFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base Squircle -->
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+
+  <!-- Optimized F Path -->
+  <path fill="#ffffff" d="
+    M 210,345
+    C 230,270 240,230 250,210
+    C 275,215 310,210 330,205
+    C 300,195 270,195 260,185
+    C 270,165 280,150 295,140
+    C 325,140 355,135 375,125
+    C 345,110 300,105 250,120
+    C 215,130 185,175 165,225
+    C 145,275 130,325 140,345
+    C 150,365 190,365 210,345 Z
+  " transform="translate(10, 10) scale(1.05)"/>
+</svg>

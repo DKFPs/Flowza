@@ -20,9 +20,9 @@ export function UpgradeTrigger() {
 
     const checkLimits = async () => {
       const items = [
-        { name: "agendamentos", current: usage.appointments, max: limits.maxAppointments },
-        { name: "profissionais", current: usage.professionals, max: limits.maxProfessionals },
-        { name: "unidades", current: usage.units, max: limits.maxUnits },
+        { name: "agendamentos", current: usage.appointments, max: 999999 },
+        { name: "profissionais", current: usage.professionals, max: limits.professionalsLimit },
+        { name: "unidades", current: usage.units, max: (limits.multiUnit ? 999 : 1) },
       ];
 
       for (const item of items) {

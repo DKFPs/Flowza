@@ -257,16 +257,16 @@ const Overview = () => {
   }
 
   // Feature availability based on plan
-  const hasAdvancedCharts = plan.id === PlanId.BUSINESS || plan.id === PlanId.PREMIUM;
-  const hasInsights = plan.id === PlanId.BUSINESS || plan.id === PlanId.PREMIUM;
-  const hasAutomations = plan.id === PlanId.BUSINESS || plan.id === PlanId.PREMIUM;
+  const hasAdvancedCharts = limits.analytics === "advanced";
+  const hasInsights = limits.analytics === "advanced";
+  const hasAutomations = limits.automation !== "none";
 
   // Simulation logic for monetization triggers based on real data
   const isHighCancellation = cancellationRate > 15;
-  const appointmentUsagePercent = limits.maxAppointments > 0 ? Math.min((usage.appointments / limits.maxAppointments) * 100, 100) : 0;
+  const appointmentUsagePercent = 99999 > 0 ? Math.min((usage.appointments / 99999) * 100, 100) : 0;
   const isNearLimit = appointmentUsagePercent >= 80;
   const isStalledGrowth = usage.appointments < 5; // Can still be a trigger if they have low global usage
-  const isOverLimit = usage.appointments >= limits.maxAppointments;
+  const isOverLimit = usage.appointments >= 99999;
 
   return (
     <div className="space-y-6 md:space-y-8 pb-32 lg:pb-10">
@@ -331,7 +331,7 @@ const Overview = () => {
               <UpgradeTrigger 
                 type="limit"
                 title={isOverLimit ? "Limite de Agendamentos ATINGIDO!" : "Atenção ao Limite (85%)"}
-                description={`Você está operando no limite do plano ${plan.name} (${usage.appointments}/${limits.maxAppointments} agendamentos).`}
+                description={`Você está operando no limite do plano ${plan.name} (${usage.appointments}/${99999} agendamentos).`}
                 solution="Faça o upgrade para o plano superior e tenha agendamentos ilimitados para não perder clientes."
               />
             )}
@@ -407,10 +407,10 @@ const Overview = () => {
         ))}
 
         {/* Premium Stats */}
-        <LockedStat label="LTV (Life Time Value)" isLocked={plan.id === PlanId.FREE || plan.id === PlanId.PRO} planName="Business" />
-        <LockedStat label="CAC Médio" isLocked={plan.id !== PlanId.PREMIUM} planName="Premium" />
-        <LockedStat label="Churn Rate" isLocked={plan.id !== PlanId.PREMIUM} planName="Premium" />
-        <LockedStat label="ROI de Campanhas" isLocked={plan.id === PlanId.FREE || plan.id === PlanId.PRO} planName="Business" />
+        <LockedStat label="LTV (Life Time Value)" isLocked={limits?.analytics !== "advanced"} planName="Business" />
+        <LockedStat label="CAC Médio" isLocked={!limits?.aiMarketing} planName="Premium" />
+        <LockedStat label="Churn Rate" isLocked={!limits?.aiMarketing} planName="Premium" />
+        <LockedStat label="ROI de Campanhas" isLocked={limits?.analytics !== "advanced"} planName="Business" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

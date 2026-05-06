@@ -14,7 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Client } from "@/types";
-import { Search, UserPlus, FileDown, MoreHorizontal, Sparkles } from "lucide-react";
+import { Search, UserPlus, FileDown, MoreHorizontal, Sparkles, TrendingDown, TrendingUp, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,6 +22,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { LoyaltyService } from "@/services/loyaltyService";
+import { Badge } from "@/components/ui/badge";
+
+const getChurnRisk = (lastVisit: any) => {
+  if (!lastVisit) return { level: 'Desconhecido', color: 'bg-muted text-muted-foreground' };
+  
+  const date = lastVisit.toDate ? lastVisit.toDate() : new Date(lastVisit);
+  const diffTime = Math.abs(new Date().getTime() - date.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+  
+  if (diffDays > 60) return { level: 'Alto Risco', color: 'bg-red-500/10 text-red-500' };
+  if (diffDays > 30) return { level: 'Atenção', color: 'bg-yellow-500/10 text-yellow-600' };
+  return { level: 'Ativo', color: 'bg-green-500/10 text-green-500' };
+};
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+};
 
 const Clients = () => {
   const { business } = useBusiness();
@@ -131,11 +148,15 @@ const Clients = () => {
                 <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border">
                   <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4">Cliente</TableHead>
                   <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4 hidden sm:table-cell">Contato</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-center">Status / Risco</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-right">LTV / Visitas</TableHead>
                   <TableHead className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClients.map((c) => (
+                {filteredClients.map((c) => {
+                  const risk = getChurnRisk(c.last_appointment_date || c.created_at);
+                  return (
                   <TableRow key={c.id} className="hover:bg-muted/10 border-b border-border last:border-0">
                     <TableCell className="p-4">
                       <div className="flex items-center gap-3">
@@ -154,6 +175,18 @@ const Clients = () => {
                         <span className="text-[10px] text-muted-foreground">{c.email || "—"}</span>
                       </div>
                     </TableCell>
+                    <TableCell className="p-4 text-center">
+                      <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${risk.color}`}>
+                        {risk.level === 'Alto Risco' && <AlertTriangle className="w-3 h-3 mr-1" />}
+                        {risk.level}
+                      </div>
+                    </TableCell>
+                    <TableCell className="p-4 text-right">
+                      <div className="flex flex-col gap-0.5 items-end">
+                        <span className="text-xs font-bold text-primary">{formatCurrency(c.total_revenue || 0)}</span>
+                        <span className="text-[10px] text-muted-foreground">{c.appointments_count || 0} visitas</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="p-4 text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -163,18 +196,25 @@ const Clients = () => {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => {
+                            window.open(`https://wa.me/${c.phone?.replace(/\D/g, '')}`, '_blank');
+                          }}>
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="w-4 h-4 mr-2" />
+                            Chamar no WhatsApp
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => {
                             setSelectedClient(c);
                             setPointsToAdd(10);
                             setPointsModalOpen(true);
                           }}>
-                            <Sparkles className="w-4 h-4 mr-2" />
+                            <Sparkles className="w-4 h-4 mr-2 text-primary" />
                             Adicionar Pontos
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

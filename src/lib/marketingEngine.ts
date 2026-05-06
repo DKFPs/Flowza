@@ -44,13 +44,14 @@ export const generateMarketingOpportunities = async (businessId: string) => {
     // Módulo 1 & 2: Identificação Oportunidades Baseado em Tempo/Retenção
     clientsSnap.forEach(doc => {
         const c = doc.data();
-        if (c.last_visit) {
-            const lastVisit = c.last_visit.toDate();
+        const lastVisitDate = c.last_appointment_date || c.last_visit;
+        if (lastVisitDate) {
+            const lastVisit = lastVisitDate.toDate ? lastVisitDate.toDate() : new Date(lastVisitDate);
             const diffDays = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 3600 * 24));
             
             if (diffDays > 30 && diffDays < 90) { // Inativos (mais de 30 dias)
                 inactiveClients.push({ id: doc.id, name: c.name });
-            } else if (diffDays <= 30 && (c.total_visits || 0) > 3) { // Recorrentes, aptos a Upsell
+            } else if (diffDays <= 30 && (c.appointments_count || c.total_visits || 0) > 3) { // Recorrentes, aptos a Upsell
                 recurringClients.push({ id: doc.id, name: c.name });
             }
         }

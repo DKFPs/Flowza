@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Search, Calendar, Clock, User, Coins, Gift, ArrowLeft, Star, Send, XCircle, RefreshCw } from "lucide-react";
+import { Search, Calendar, Clock, User, Coins, Gift, ArrowLeft, Star, Send, XCircle, RefreshCw, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useParams, Link } from "react-router-dom";
 import { LoyaltyService } from "@/services/loyaltyService";
@@ -21,6 +21,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreUtils";
+import { normalizePhone } from "@/lib/normalization";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -101,7 +102,7 @@ const ClientArea = () => {
       setLoyaltyCurrency(bizData.loyalty_currency_name || "RESGATE");
 
       // 2. Find client by phone in this business
-      const cleanPhone = phone.trim();
+      const cleanPhone = normalizePhone(phone);
       const clientQuery = query(
         collection(db, "clients"), 
         where("business_id", "==", bizId),
@@ -318,25 +319,49 @@ const ClientArea = () => {
     if (!rescheduleApt || !rescheduleDate || !rescheduleTime || !clientData?.id) return;
     setActionLoading(true);
 
-    const duration = 30; // Assuming 30 if service info missing
-    const [h, m] = rescheduleTime.split(":").map(Number);
-    const endMin = h * 60 + m + duration;
-    const endTime = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}:00`;
+    const duration = rescheduleApt?.services?.duration || 30; // Attempt to use service duration
+    const aptDateStr = format(rescheduleDate, "yyyy-MM-dd");
 
     try {
+      // Validar disponibilidade
+      const availabilityResponse = await fetch("/api/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: rescheduleApt.business_id,
+          professionalId: rescheduleApt.professional_id,
+          date: aptDateStr,
+          duration: duration,
+          checkOnlyTime: rescheduleTime
+        })
+      });
+
+      if (availabilityResponse.ok) {
+         const availabilityData = await availabilityResponse.json();
+         if (!availabilityData.available) {
+           toast({ title: "Horário Indisponível", description: "O horário que você escolheu não está mais disponível. Escolha outro.", variant: "destructive" });
+           setActionLoading(false);
+           return;
+         }
+      }
+
+      const [h, m] = rescheduleTime.split(":").map(Number);
+      const endMin = h * 60 + m + duration;
+      const endTime = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}:00`;
+
       await updateDoc(doc(db, "appointments", rescheduleApt.id), {
-        appointment_date: format(rescheduleDate, "yyyy-MM-dd"),
+        appointment_date: aptDateStr,
         start_time: rescheduleTime + ":00",
         end_time: endTime,
         status: "scheduled",
         updated_at: serverTimestamp()
       }).catch(e => handleFirestoreError(e, OperationType.UPDATE, `appointments/${rescheduleApt.id}`));
 
-      toast({ title: "Reagendado com sucesso!" });
+      toast({ title: "Agendamento Alterado", description: "O seu reagendamento foi realizado com sucesso!" });
       setAppointments((prev) =>
         prev.map((a) =>
           a.id === rescheduleApt.id
-            ? { ...a, appointment_date: format(rescheduleDate, "yyyy-MM-dd"), start_time: rescheduleTime + ":00", status: "scheduled" }
+            ? { ...a, appointment_date: aptDateStr, start_time: rescheduleTime + ":00", status: "scheduled" }
             : a
         )
       );
@@ -459,23 +484,59 @@ const ClientArea = () => {
 
             {/* Loyalty */}
             <div className="bg-card border border-border rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Coins className="w-5 h-5 text-primary" />
-                <h2 className="font-bold text-lg">Pontos de Fidelidade</h2>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-5 h-5 text-primary" />
+                  <h2 className="font-bold text-lg">Pontos de Fidelidade</h2>
+                </div>
               </div>
               {loyaltyPoints ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="text-center p-3 rounded-lg bg-primary/10">
-                    <p className="text-2xl font-bold text-primary">{loyaltyPoints.balance}</p>
-                    <p className="text-xs text-muted-foreground">Saldo atual</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted">
-                    <p className="text-2xl font-bold text-foreground">{loyaltyPoints.total_earned}</p>
-                    <p className="text-xs text-muted-foreground">Total ganho</p>
+                <div className="flex flex-col gap-3">
+                  {(() => {
+                    const points = loyaltyPoints.total_earned || 0;
+                    let tier = { name: 'Bronze', color: 'text-amber-700', bg: 'bg-amber-700/10', border: 'border-amber-700/20' };
+                    if (points >= 10000) tier = { name: 'Rubi', color: 'text-rose-500', bg: 'bg-rose-500/10', border: 'border-rose-500/20' };
+                    else if (points >= 5000) tier = { name: 'Diamante', color: 'text-violet-500', bg: 'bg-violet-500/10', border: 'border-violet-500/20' };
+                    else if (points >= 3000) tier = { name: 'Platina', color: 'text-cyan-500', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' };
+                    else if (points >= 1500) tier = { name: 'Ouro', color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' };
+                    else if (points >= 500) tier = { name: 'Prata', color: 'text-slate-400', bg: 'bg-slate-400/10', border: 'border-slate-400/20' };
+                    
+                    return (
+                      <div className={`p-3 rounded-xl border flex items-center gap-3 ${tier.bg} ${tier.border}`}>
+                         <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center border-2 border-current bg-background/50 ${tier.color}`}>
+                           <Trophy className="w-6 h-6" />
+                         </div>
+                         <div>
+                           <p className={`font-bold ${tier.color}`}>Nível {tier.name}</p>
+                           <p className="text-xs text-muted-foreground">{points} pontos totais acumulados</p>
+                         </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center p-3 rounded-xl bg-primary/10">
+                      <p className="text-2xl font-bold text-primary">{loyaltyPoints.balance}</p>
+                      <p className="text-xs text-primary/80 font-medium uppercase mt-1">Saldo Atual</p>
+                    </div>
+                    <div className="text-center p-3 rounded-xl bg-muted">
+                      <p className="text-2xl font-bold text-foreground">{loyaltyPoints.total_earned}</p>
+                      <p className="text-xs text-muted-foreground font-medium uppercase mt-1">Total Ganho</p>
+                    </div>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Você ainda não possui pontos.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="p-3 rounded-xl border flex items-center gap-3 bg-amber-700/10 border-amber-700/20">
+                     <div className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center border-2 border-current bg-background/50 text-amber-700">
+                       <Trophy className="w-6 h-6" />
+                     </div>
+                     <div>
+                       <p className="font-bold text-amber-700">Nível Bronze</p>
+                       <p className="text-xs text-muted-foreground">0 pontos totais acumulados</p>
+                     </div>
+                  </div>
+                  <p className="text-sm text-center text-muted-foreground mt-2">Você ainda não possui pontos.</p>
+                </div>
               )}
             </div>
 
@@ -542,7 +603,7 @@ const ClientArea = () => {
                   {appointments.map((apt) => (
                     <div key={apt.id} className="p-3 rounded-lg border border-border space-y-2">
                       <div className="flex items-start justify-between">
-                        <p className="font-semibold text-sm">{apt.services?.name || "Serviço"}</p>
+                        <p className="font-semibold text-sm">{apt.services?.name || apt.service_name_snapshot || "Serviço"}</p>
                         <div className="flex items-center gap-1">
                           {reviewedIds.includes(apt.id) && (
                             <Badge variant="outline" className="text-xs gap-1">

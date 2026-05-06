@@ -52,11 +52,11 @@ import { FeatureLock } from "@/components/dashboard/MonetizationComponents";
 import { PlanId } from "@/types";
 
 const LoyaltyDashboard = () => {
-  const { business, plan } = useBusiness();
+  const { business, plan , limits } = useBusiness();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const isEligible = plan?.id === PlanId.PREMIUM || plan?.id === PlanId.BUSINESS;
+  const isEligible = limits?.automation === "full";
   
   const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
   const [isMissionModalOpen, setIsMissionModalOpen] = useState(false);
@@ -391,11 +391,14 @@ const LoyaltyDashboard = () => {
         </TabsContent>
 
         <TabsContent value="levels">
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {[
                 { name: 'Bronze', points: 0, color: 'text-amber-700', bg: 'bg-amber-700/5' },
                 { name: 'Prata', points: 500, color: 'text-slate-400', bg: 'bg-slate-400/5' },
-                { name: 'Ouro', points: 1500, color: 'text-yellow-500', bg: 'bg-yellow-500/5' }
+                { name: 'Ouro', points: 1500, color: 'text-yellow-500', bg: 'bg-yellow-500/5' },
+                { name: 'Platina', points: 3000, color: 'text-cyan-500', bg: 'bg-cyan-500/5' },
+                { name: 'Diamante', points: 5000, color: 'text-violet-500', bg: 'bg-violet-500/5' },
+                { name: 'Rubi', points: 10000, color: 'text-rose-500', bg: 'bg-rose-500/5' }
               ].map(level => (
                 <Card key={level.name} className={`rounded-3xl border-border bg-card shadow-sm overflow-hidden p-6 text-center ${level.bg}`}>
                    <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center border-4 border-current mb-4 ${level.color}`}>

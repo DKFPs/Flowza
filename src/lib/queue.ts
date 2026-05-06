@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, query, where, limit, orderBy } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, getDoc, query, where, limit, orderBy } from 'firebase/firestore';
 import { logger } from './logger';
 import { ErrorType, classifyError } from './resilience';
 
@@ -80,6 +80,37 @@ const executeJob = async (job: QueueJob) => {
         // throw new Error("Teste de Timeout");
     } else if (job.type === 'sync_whatsapp') {
         await new Promise(res => setTimeout(res, 800));
+    } else if (job.type === 'trigger_playbook_automation' || job.type === 'sync_appointment_effects') {
+        await new Promise(res => setTimeout(res, 300));
+        await addDoc(collection(db, "notification_queue"), {
+            business_id: job.businessId,
+            appointment_id: job.payload?.aptId || "system",
+            type: "whatsapp_message",
+            status: "sent",
+            retry_count: 0,
+            payload: {
+                client_name: job.payload?.clientName || job.payload?.name || "Cliente",
+                service_name: job.payload?.serviceName || job.payload?.service || "Serviço",
+            },
+            created_at: serverTimestamp()
+        });
+
+        // Trigger webhook if enabled (Fase 4: Integrações e Escala)
+        try {
+            const bizInteg = await getDoc(doc(db, "business_integrations", job.businessId));
+            if (bizInteg.exists() && bizInteg.data()?.webhookEnabled && bizInteg.data()?.webhookUrl) {
+                // Simulação de disparo de webhook
+                fetch(bizInteg.data().webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        event: job.type,
+                        businessId: job.businessId,
+                        data: job.payload
+                    })
+                }).catch(() => {}); // ignora erros falhos async
+            }
+        } catch (e) {}
     }
 
     await updateDoc(jobRef, { status: 'completed', updatedAt: serverTimestamp() });

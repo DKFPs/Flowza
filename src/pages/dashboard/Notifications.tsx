@@ -82,7 +82,7 @@ const Notifications = () => {
   }
 
   return (
-    <PlanGuard feature="hasReminders" label="Notificações & WhatsApp" targetPlan={PlanId.PRO}>
+    <PlanGuard feature="whatsappIntegration" label="Notificações & WhatsApp" targetPlan={PlanId.PRO}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>

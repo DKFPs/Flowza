@@ -258,6 +258,29 @@ const MyAppointments = () => {
       const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
 
       const dateStr = format(newDate, "yyyy-MM-dd");
+
+      // Verify availability
+      const availabilityResponse = await fetch("/api/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: selectedApt.business_id,
+          professionalId: selectedApt.professional_id,
+          date: dateStr,
+          duration: duration,
+          checkOnlyTime: newTime
+        })
+      });
+
+      if (availabilityResponse.ok) {
+         const availabilityData = await availabilityResponse.json();
+         if (!availabilityData.available) {
+           toast({ title: "Horário Indisponível", description: "O horário que você escolheu não está mais disponível. Escolha outro.", variant: "destructive" });
+           setIsProcessing(false);
+           return;
+         }
+      }
+
       await updateDoc(doc(db, "appointments", selectedApt.id), {
         appointment_date: dateStr,
         start_time: newTime + ":00",
@@ -267,7 +290,7 @@ const MyAppointments = () => {
 
       await notifyBusiness(selectedApt, "reschedule", `${format(newDate, "dd/MM")} às ${newTime}`);
 
-      toast({ title: "Agendamento reagendado", description: "O estabelecimento foi notificado." });
+      toast({ title: "Agendamento Alterado", description: "O seu reagendamento foi realizado com sucesso!" });
       setIsRescheduleModalOpen(false);
       fetchAppointments();
     } catch (error) {

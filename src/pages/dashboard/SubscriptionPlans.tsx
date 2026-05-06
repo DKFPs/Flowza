@@ -54,28 +54,8 @@ export default function SubscriptionPlans() {
     }
 
     if (urlCoupon) {
-      const validateAndApply = async () => {
-        setIsValidating(true);
-        const discount = await DiscountService.validateCoupon(urlCoupon);
-        setIsValidating(false);
-        if (discount) {
-          setActiveDiscount({ type: discount.type, value: discount.value, code: discount.code });
-          toast({ title: "Cupom ativado!", description: `Aplicamos o cupom ${urlCoupon} automaticamente.` });
-        }
-      };
-      validateAndApply();
+      setCouponInput(urlCoupon);
     }
-
-    const loadOffers = async () => {
-      const offers = await DiscountService.getUserOffers(user.uid);
-      if (offers.length > 0) {
-        // Pega a oferta mais recente/melhor
-        const bestOffer = offers[0];
-        setActiveDiscount({ type: "percentage", value: 30, code: bestOffer.code }); // Exemplo fixo por enquanto
-      }
-    };
-
-    loadOffers();
   }, [business?.id, user]);
 
   const handleApplyCoupon = async () => {
@@ -132,10 +112,13 @@ export default function SubscriptionPlans() {
         priceId,
         customerEmail: user?.email || undefined,
         discountCode: activeDiscount?.code,
+        businessId: business?.id,
+        planId: planId,
       });
 
       if (url) {
-        window.location.href = url;
+        // Open Stripe Checkout in a new tab because Stripe cannot be embedded in an iframe (which is how this AI preview works).
+        window.open(url, '_blank');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível iniciar o checkout. Tente novamente mais tarde.";
@@ -144,6 +127,7 @@ export default function SubscriptionPlans() {
         description: message, 
         variant: "destructive" 
       });
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -207,19 +191,21 @@ export default function SubscriptionPlans() {
       )}
 
       {/* Billing Toggle */}
-      <div className="flex items-center justify-center gap-4">
-        <Label className={cn(billingPeriod === "monthly" ? "text-foreground font-bold" : "text-muted-foreground")}>Mensal</Label>
-        <Switch 
-          checked={billingPeriod === "annually"}
-          onCheckedChange={(checked) => setBillingPeriod(checked ? "annually" : "monthly")}
-        />
-        <div className="flex items-center gap-2">
-          <Label className={cn(billingPeriod === "annually" ? "text-foreground font-bold" : "text-muted-foreground")}>Anual</Label>
-          <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100 border-none">
-            2 meses grátis
-          </Badge>
+      {Object.values(PLANS).some(plan => plan.stripePriceIdAnnually) && (
+        <div className="flex items-center justify-center gap-4">
+          <Label className={cn(billingPeriod === "monthly" ? "text-foreground font-bold" : "text-muted-foreground")}>Mensal</Label>
+          <Switch 
+            checked={billingPeriod === "annually"}
+            onCheckedChange={(checked) => setBillingPeriod(checked ? "annually" : "monthly")}
+          />
+          <div className="flex items-center gap-2">
+            <Label className={cn(billingPeriod === "annually" ? "text-foreground font-bold" : "text-muted-foreground")}>Anual</Label>
+            <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100 border-none">
+              2 meses grátis
+            </Badge>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Coupon Input */}
       {!activeDiscount && (
@@ -260,8 +246,8 @@ export default function SubscriptionPlans() {
             transition={{ delay: index * 0.1 }}
           >
             <Card className={cn(
-              "relative flex flex-col h-full border-2 transition-all hover:shadow-lg",
-              plan.isRecommended ? "border-primary shadow-md scale-105 z-10" : "border-border shadow-sm hover:border-primary/50"
+              "relative flex flex-col h-full border-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+              plan.isRecommended ? "border-primary shadow-lg scale-105 z-10 animate-soft-pulse hover:shadow-primary/20" : "border-border shadow-sm hover:border-primary/50"
             )}>
               {plan.isRecommended && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
@@ -332,30 +318,30 @@ export default function SubscriptionPlans() {
 
                 <div className="space-y-3 pt-4 border-t">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    {plan.limits.maxAppointments === 9999 ? "Agendamentos ilimitados" : `${plan.limits.maxAppointments} agendamentos/mês`}
+                    {"Agendamentos Ilimitados"}
                   </div>
                   <ul className="space-y-2.5">
                     <li className="flex items-start gap-2 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                      <span>{plan.limits.maxProfessionals === 999 ? "Equipe ilimitada" : `Até ${plan.limits.maxProfessionals} profissional`}</span>
+                      <span>{plan.limits.professionalsLimit === 999 ? "Equipe ilimitada" : `Até ${plan.limits.professionalsLimit} profissional`}</span>
                     </li>
                     <li className="flex items-start gap-2 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                      <span>{plan.limits.maxUnits === 99 ? "Unidades ilimitadas" : `Até ${plan.limits.maxUnits} unidade`}</span>
+                      <span>{plan.limits.multiUnit ? "Múltiplas unidades" : "1 Unidade"}</span>
                     </li>
-                    {plan.limits.hasReminders && (
+                    {plan.limits.automation !== "none" && (
                       <li className="flex items-start gap-2 text-sm text-muted-foreground">
                         <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
                         <span>Lembretes automáticos</span>
                       </li>
                     )}
-                    {plan.limits.hasLoyalty && (
+                    {plan.limits.reviews && (
                       <li className="flex items-start gap-2 text-sm text-muted-foreground">
                         <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
                         <span>Programa de fidelidade</span>
                       </li>
                     )}
-                    {plan.limits.hasAnalytics && (
+                    {plan.limits.analytics !== "none" && (
                       <li className="flex items-start gap-2 text-sm text-muted-foreground">
                         <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
                         <span>Relatórios avançados</span>

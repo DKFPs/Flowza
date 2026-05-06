@@ -30,6 +30,8 @@ const DashboardCheckIn = lazy(() => import("@/pages/dashboard/CheckIn"));
 const DashboardReviews = lazy(() => import("@/pages/dashboard/Reviews"));
 const DashboardNotifications = lazy(() => import("@/pages/dashboard/Notifications"));
 const DashboardNotificationQueue = lazy(() => import("@/pages/dashboard/NotificationQueue"));
+const DashboardAutomations = lazy(() => import("@/pages/dashboard/Automations"));
+const DashboardIntegrations = lazy(() => import("@/pages/dashboard/Integrations"));
 const DashboardStyleGallery = lazy(() => import("@/pages/dashboard/StyleGallery"));
 const DashboardDemandForecast = lazy(() => import("@/pages/dashboard/DemandForecast"));
 const DashboardRewards = lazy(() => import("@/pages/dashboard/Rewards"));
@@ -66,6 +68,9 @@ const GlobalAdministrators = lazy(() => import("@/pages/global_admin/GlobalAdmin
 import GlobalAuditLogs from "@/pages/global_admin/GlobalAuditLogs";
 import GlobalDatabase from "@/pages/global_admin/GlobalDatabase";
 import GlobalTenants from "@/pages/global_admin/GlobalTenants";
+import GlobalCoupons from "@/pages/global_admin/GlobalCoupons";
+import GlobalSettings from "@/pages/global_admin/GlobalSettings";
+import GlobalFeatures from "@/pages/global_admin/GlobalFeatures";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -128,6 +133,9 @@ const AppContent = () => {
                   <Route path="audit-logs" element={<GlobalAuditLogs />} />
                   <Route path="database" element={<GlobalDatabase />} />
                   <Route path="tenants" element={<GlobalTenants />} />
+                  <Route path="coupons" element={<GlobalCoupons />} />
+                  <Route path="settings" element={<GlobalSettings />} />
+                  <Route path="features" element={<GlobalFeatures />} />
                 </Route>
 
                 {/* Business dashboard */}
@@ -145,6 +153,8 @@ const AppContent = () => {
                   <Route path="reviews" element={<DashboardReviews />} />
                   <Route path="notifications" element={<DashboardNotifications />} />
                   <Route path="queue" element={<DashboardNotificationQueue />} />
+                  <Route path="automations" element={<DashboardAutomations />} />
+                  <Route path="integrations" element={<DashboardIntegrations />} />
                   <Route path="gallery" element={<DashboardStyleGallery />} />
                   <Route path="forecast" element={<DashboardDemandForecast />} />
                   <Route path="rewards" element={<DashboardRewards />} />
