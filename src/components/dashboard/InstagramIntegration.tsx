@@ -19,7 +19,7 @@ const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({ business, o
   const [syncing, setSyncing] = useState(false);
   const config = business.instagram_config;
 
-  const handleAuthSuccess = useCallback(async (payload: { access_token: string; user_id: string; expires_at: number; is_simulation?: boolean }) => {
+  const handleAuthSuccess = useCallback(async (payload: { access_token: string; user_id: string; expires_at: number }) => {
     try {
       setSyncing(true);
       const businessRef = doc(db, "businesses", business.id);
@@ -27,8 +27,7 @@ const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({ business, o
         access_token: payload.access_token,
         user_id: payload.user_id,
         expires_at: payload.expires_at,
-        is_active: true,
-        is_simulation: payload.is_simulation
+        is_active: true
       };
 
       await updateDoc(businessRef, {
@@ -158,11 +157,6 @@ const InstagramIntegration: React.FC<InstagramIntegrationProps> = ({ business, o
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-bold text-green-700 dark:text-green-400">Instagram Conectado</p>
-                  {config?.is_simulation && (
-                    <span className="px-2 py-0.5 bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-full border border-amber-500/30">
-                      SIMULAÇÃO
-                    </span>
-                  )}
                 </div>
                 <p className="text-sm text-green-600 dark:text-green-500/80">Seus últimos posts estão sendo exibidos na sua página pública.</p>
               </div>

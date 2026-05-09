@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ const Subscriptions = () => {
   const [form, setForm] = useState({ client_id: "", plan_name: "", price: "0", end_date: "" });
   const [loading, setLoading] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     try {
       const bizQuery = query(collection(db, "businesses"), where("owner_id", "==", user.uid), limit(1));
@@ -55,9 +55,9 @@ const Subscriptions = () => {
     } catch (error) {
       console.error("Error fetching subscription data:", error);
     }
-  };
+  }, [user]);
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();

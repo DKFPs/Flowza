@@ -1,6 +1,6 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { collection, query, where, getDocs, limit, onSnapshot, getCountFromServer } from "firebase/firestore";
+import { collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Business, PlanId } from "@/types";

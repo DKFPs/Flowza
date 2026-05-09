@@ -48,7 +48,7 @@ const AdminSEOSettings: React.FC = () => {
       }
     };
     loadConfigs();
-  }, [business?.id]);
+  }, [business?.id, business?.name]);
 
   const saveConfigs = async () => {
     if (!business?.id) return;

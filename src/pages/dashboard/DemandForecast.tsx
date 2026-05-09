@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment, useCallback } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useNavigate } from "react-router-dom";
@@ -22,7 +22,7 @@ const DemandForecast = () => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
 
-  const loadForecast = async () => {
+  const loadForecast = useCallback(async () => {
     if (!businessId) return;
     setLoading(true);
     try {
@@ -104,9 +104,9 @@ const DemandForecast = () => {
        toast({ title: "Erro na previsão", description: error instanceof Error ? error.message : "Desconhecido", variant: "destructive" });
     }
     setLoading(false);
-  };
+  }, [businessId, toast]);
 
-  useEffect(() => { if (businessId) loadForecast(); }, [businessId]);
+  useEffect(() => { if (businessId) loadForecast(); }, [businessId, loadForecast]);
 
   const trendIcon = data?.aiInsights?.trend === "growing" ? TrendingUp : data?.aiInsights?.trend === "declining" ? TrendingDown : Minus;
   const trendColor = data?.aiInsights?.trend === "growing" ? "text-green-500" : data?.aiInsights?.trend === "declining" ? "text-destructive" : "text-muted-foreground";

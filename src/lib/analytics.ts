@@ -46,15 +46,18 @@ class AnalyticsService {
     try {
       if (db) {
         // Enviar para a coleção system_events para construção de painel interno
-        await addDoc(collection(db, "system_events"), {
-          level: "info",
-          event: eventName,
-          type: "business_metric",
-          user_id: data?.userId || "anonymous",
-          business_id: data?.businessId || "system",
-          status: "success",
-          metadata: scrubbedData,
-          created_at: serverTimestamp(),
+        await fetch("/api/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+             level: "info",
+             event: eventName,
+             type: "business_metric",
+             user_id: data?.userId || "anonymous",
+             business_id: data?.businessId || "system",
+             status: "success",
+             metadata: scrubbedData
+          })
         });
       }
     } catch (error) {

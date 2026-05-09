@@ -69,7 +69,7 @@ export function UpgradeTrigger() {
 
     const timer = setTimeout(checkLimits, 3000); // Small delay
     return () => clearTimeout(timer);
-  }, [usage, limits, plan.name, navigate, user]);
+  }, [usage, limits, plan.name, plan.id, navigate, user]);
 
   return null;
 }

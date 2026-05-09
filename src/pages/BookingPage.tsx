@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { ResponsiveModal } from "@/components/ui/ResponsiveModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Business, Service, Professional, Unit, Review } from "@/types";
+import { Turnstile } from '@marsidev/react-turnstile';
 import StyleSimulator from "@/components/gallery/StyleSimulator";
 import InstagramFeed from "@/components/public/InstagramFeed";
 import { TrackingScripts } from "@/components/public/TrackingScripts";
@@ -190,6 +191,7 @@ const BookingPageSkeleton = () => (
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [simOpen, setSimOpen] = useState(false);
+    const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
     const [aiOpen, setAiOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiResult, setAiResult] = useState("");
@@ -255,10 +257,6 @@ const BookingPageSkeleton = () => (
             hero_subtitle: "Gestão completa de agendamentos, clientes e fidelização. Onde a tecnologia encontra o resultado.",
             cta_text: "Agendar Agora",
             hero_image_url: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1920&h=1080",
-            instagram_config: {
-              is_active: true,
-              access_token: "demo"
-            },
             stats_data: [
               { label: "Clientes Ativos", value: "2k+" },
               { label: "Agendamentos/mês", value: "1.5k+" },
@@ -506,196 +504,32 @@ const BookingPageSkeleton = () => (
       if (!business) return;
 
       try {
-        // MÓDULO 2 — NORMALIZAÇÃO & ID ÚNICO DE CLIENTE
-        const cleanPhone = normalizePhone(phone);
-        const cleanName = normalizeName(name);
-        const clientId = `${business.id}_${cleanPhone}`;
-        
-        if (!isValidPhone(cleanPhone)) {
-          throw new Error("Por favor, informe um WhatsApp válido com DDD.");
+        const response = await fetch("/api/book", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businessId: business.id,
+            serviceId: service.id,
+            professionalId: professional.id,
+            idempotencyKey: crypto.randomUUID(),
+            cfTurnstileToken: turnstileToken || "",
+            selectedDate: format(date, "yyyy-MM-dd"),
+            selectedTime: time,
+            customerName: name,
+            customerPhone: phone,
+            recurrence: recurrence,
+            paymentMethod: paymentTiming || 'on_site',
+            additionalServiceIds: additionalServicesList?.map(s => s.id) || [],
+            dynamicDiscount: dynamicDiscount || 0
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || "Erro ao criar agendamento.");
         }
 
-        if (cleanName.length < 3) {
-          throw new Error("Por favor, informe seu nome completo.");
-        }
-
-        // Determine occurrences based on recurrence
-        const datesToSchedule: Date[] = [date];
-        if (recurrence === 'weekly') {
-          for(let i=1; i<4; i++) { const d = new Date(date); d.setDate(d.getDate() + i*7); datesToSchedule.push(d); }
-        } else if (recurrence === 'biweekly') {
-          for(let i=1; i<4; i++) { const d = new Date(date); d.setDate(d.getDate() + i*14); datesToSchedule.push(d); }
-        } else if (recurrence === 'monthly') {
-          for(let i=1; i<12; i++) { const d = new Date(date); d.setMonth(d.getMonth() + i); datesToSchedule.push(d); }
-        }
-
-        let firstResult: any = null;
-
-        for (const targetDate of datesToSchedule) {
-           const aptDateStr = format(targetDate, "yyyy-MM-dd");
-           // Skipping availability backend check for recurrences for speed, 
-           // but `runTransaction` still protects against exact collisions.
-           if (targetDate === date) {
-              const response = await fetch("/api/availability", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  businessId: business.id,
-                  professionalId: professional.id,
-                  date: aptDateStr,
-                  duration: (service.duration || service.duration_minutes || 30) + (additionalServicesList?.reduce((acc, s) => acc + (s.duration || s.duration_minutes || 0), 0) || 0),
-                  checkOnlyTime: time
-                })
-              });
-
-              if (response.ok) {
-                 const availData = await response.json();
-                 if (availData.conflict) {
-                    throw new Error("Este horário ou intervalo acabou de ser ocupado. Por favor, tente outro.");
-                 }
-              }
-           }
-
-           const executeTransaction = async () => runTransaction(db, async (transaction) => {
-             // === Mapeamento de Refs ===
-             const bizRef = doc(db, "businesses", business.id);
-             const clientRef = doc(db, "clients", clientId);
-             
-             const startTimeStr = time + ":00";
-             const slotId = `${business.id}_${professional.id}_${aptDateStr.replace(/-/g, "")}_${startTimeStr.replace(/:/g, "")}`;
-             const aptRef = doc(db, "appointments", slotId);
-
-             // === Execução de TODAS as Leituras (Reads) antes das Escritas ===
-             const bizDoc = await transaction.get(bizRef);
-             const clientSnap = await transaction.get(clientRef);
-             const aptSnap = await transaction.get(aptRef);
-
-             // 1. Verificar Limites e Status do Negócio
-             if (!bizDoc.exists()) throw new Error("Estabelecimento não encontrado.");
-             
-             const bizData = bizDoc.data();
-             if (slug !== "demo" && bizData.limit_appointments && (bizData.usage_appointments || 0) >= bizData.limit_appointments) {
-               throw new Error("Limite de agendamentos atingido para este estabelecimento.");
-             }
-
-             // 2. Verificar Concorrência de Horário
-             if (aptSnap.exists() && aptSnap.data().status !== 'cancelled') {
-               const data = aptSnap.data();
-               if (data.client_id === clientId) {
-                 return { aptId: slotId, isOnlinePayment: data.payment_timing !== 'on_site', alreadyExists: true, targetDate };
-               }
-               
-               if (targetDate !== date) {
-                 // For recurrences, soft fail log and continue
-                 console.warn(`Colisão em recorrência ${slotId}. Ignorado.`);
-                 return { skip: true };
-               } else {
-                 throw new Error("Este horário acabou de ser ocupado por outra pessoa. Por favor, tente outro horário imediato.");
-               }
-             }
-
-             let isNewClient = false;
-
-             // 4. Configurar Tempos
-             const mainDuration = service.duration || service.duration_minutes || 30;
-             const additionalDuration = additionalServicesList?.reduce((acc, s) => acc + (s.duration || s.duration_minutes || 0), 0) || 0;
-             const duration = mainDuration + additionalDuration;
-
-             const endMinutes = parseInt(time.split(":")[0]) * 60 + parseInt(time.split(":")[1]) + duration;
-             const endTimeStr = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}:00`;
-
-             let totalPrice = Number(service.price) + (additionalServicesList?.reduce((acc, s) => acc + Number(s.price), 0) || 0);
-             if (dynamicDiscount && dynamicDiscount > 0) {
-               totalPrice = totalPrice - (totalPrice * (dynamicDiscount / 100));
-             }
-
-             // === Escritas (Writes) ===
-             // 3. Gerenciar Cliente
-             if (!clientSnap.exists()) {
-               transaction.set(clientRef, {
-                 business_id: business.id,
-                 name: cleanName,
-                 phone: cleanPhone,
-                 created_at: serverTimestamp(),
-                 updated_at: serverTimestamp(),
-                 appointments_count: 1,
-                 total_revenue: totalPrice,
-                 last_appointment_date: serverTimestamp()
-               });
-               isNewClient = true;
-             } else {
-               transaction.update(clientRef, { 
-                 name: cleanName, 
-                 updated_at: serverTimestamp(),
-                 appointments_count: increment(1),
-                 total_revenue: increment(totalPrice),
-                 last_appointment_date: serverTimestamp()
-               });
-             }
-
-             const isOnlinePayment = business.enable_payment_setup && paymentTiming !== 'on_site';
-             const initialStatus = isOnlinePayment ? "pending_payment" : (business.auto_confirm ? "confirmed" : "pending");
-
-             // 5. Criar Agendamento
-             transaction.set(aptRef, {
-               business_id: business.id,
-               client_id: clientId,
-               professional_id: professional.id,
-               service_id: service.id,
-               additional_service_ids: additionalServicesList?.map(s => s.id) || [],
-               total_price: totalPrice,
-               appointment_date: aptDateStr,
-               start_time: startTimeStr,
-               end_time: endTimeStr,
-               status: initialStatus,
-               recurrence_type: recurrence || null,
-               payment_status: "unpaid",
-               payment_timing: paymentTiming || 'on_site',
-               created_at: serverTimestamp(),
-               updated_at: serverTimestamp(),
-               client_name: cleanName,
-               client_phone: cleanPhone,
-               service_name_snapshot: service.name + (additionalServicesList?.length ? ` (+${additionalServicesList.length})` : '')
-             });
-
-             // 6. Módulo 3 — Fila de Processamento (Auto-Healing Queue Async)
-             await enqueueJob({
-                type: 'sync_appointment_effects',
-                payload: { aptId: slotId, paymentTiming, isOnlinePayment },
-                businessId: business.id
-             });
-
-             // Single update to bizRef
-             if (isNewClient) {
-               transaction.update(bizRef, { usage_appointments: increment(1), usage_clients: increment(1) });
-             } else {
-               transaction.update(bizRef, { usage_appointments: increment(1) });
-             }
-             
-             return { aptId: slotId, isOnlinePayment };
-           });
-
-           const fallbackTransaction = async (err: unknown) => {
-               const eMsg = err instanceof Error ? err.message : String(err);
-               // Ignorar double booking de salvar no fallback p n criar lixo
-               if (!eMsg.includes("ocupado por outra pessoa") && !eMsg.includes("válido") && !eMsg.includes("completo")) {
-                 await enqueueJob({
-                     type: 'fallback_appointment_creation',
-                     payload: { name, phone, date: targetDate.toISOString(), time, serviceId: service.id, professionalId: professional.id, error: eMsg },
-                     businessId: business.id
-                 }, 0);
-               }
-               throw err;
-           };
-
-           const result = await withFallback(
-               () => withRetry(executeTransaction, { operationName: "create_appointment_txn", businessId: business.id }),
-               fallbackTransaction,
-               { operationName: "fallback_appointment", businessId: business.id }
-           );
-           
-           if (!firstResult) firstResult = result;
-        }
+        const data = await response.json();
         
         // Tracking Escala & Diferenciação (Fase 4)
         if (typeof window !== 'undefined' && window.fbq) {
@@ -708,18 +542,9 @@ const BookingPageSkeleton = () => (
            window.gtag('event', 'conversion', { 'send_to': 'AW-CONVERSION_ID', value: Number(service.price), currency: 'BRL' });
         }
 
-        // Pós-transaction
-        if (slug !== "demo" && clientId) {
-           try {
-             await LoyaltyService.awardRegistrationPoints(business.id, clientId);
-           } catch (e) {
-             console.warn("Loyalty awarding failed", e);
-           }
-        }
-
-        return firstResult;
+        return data; // Expected shape: { success: true, aptId, isOnlinePayment }
       } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, "booking_v3_transaction");
+        throw error;
       }
     },
     onSuccess: (data) => {
@@ -2053,9 +1878,19 @@ const BookingPageSkeleton = () => (
                      </div>
                    )}
 
+                   <div className="flex flex-col items-center gap-4 py-4 w-full">
+                     <Turnstile
+                        siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || "1x00000000000000000000AA"}
+                        onSuccess={(token) => setTurnstileToken(token)}
+                        options={{
+                          theme: 'auto',
+                        }}
+                     />
+                   </div>
+
                    <button
                      onClick={handleBook}
-                     disabled={bookMutation.isPending || bookMutation.isSuccess || name.length < 3 || phone.length < 10 || !time}
+                     disabled={bookMutation.isPending || bookMutation.isSuccess || name.length < 3 || phone.length < 10 || !time || !turnstileToken}
                      className="w-full h-20 text-xl font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
                      style={{ backgroundColor: t.primary, color: "#fff", borderRadius: t.radius }}
                    >

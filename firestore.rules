@@ -17,6 +17,21 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function getPlanUpper(planId) {
+      return planId == null ? 'FREE' : planId.upper();
+    }
+
+    function isSubscriptionActive(bizId) {
+      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
+      return biz.subscription_status == 'active';
+    }
+
+    function hasPremiumAccess(bizId) {
+      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
+      return biz.subscription_status == 'active' && 
+             (getPlanUpper(biz.plan_id) == 'PREMIUM');
+    }
+
     // Helper para verificar se o ID é válido (previne IDs gigantes ou caracteres estranhos)
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
@@ -100,8 +115,16 @@ service cloud.firestore {
                       request.auth.uid == incoming().owner_id &&
                       isValidId(bizId);
       allow update: if isGlobalAdmin() || 
-                      (isSignedIn() && request.auth.uid == existing().owner_id && (incoming().owner_id == existing().owner_id)) || 
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['usage_appointments', 'usage_professionals', 'usage_services', 'usage_units', 'usage_clients']));
+                      (isSignedIn() && request.auth.uid == existing().owner_id && 
+                       (incoming().owner_id == existing().owner_id) &&
+                       (incoming().get('plan_id', 'FREE') == existing().get('plan_id', 'FREE')) &&
+                       (incoming().get('subscription_status', 'active') == existing().get('subscription_status', 'active')) &&
+                       (incoming().get('usage_professionals', 0) == existing().get('usage_professionals', 0)) &&
+                       (incoming().get('usage_services', 0) == existing().get('usage_services', 0)) &&
+                       (incoming().get('usage_appointments', 0) == existing().get('usage_appointments', 0)) &&
+                       (incoming().get('usage_clients', 0) == existing().get('usage_clients', 0)) &&
+                       (incoming().get('stripe_customer_id', '') == existing().get('stripe_customer_id', '')) &&
+                       (incoming().get('stripe_subscription_id', '') == existing().get('stripe_subscription_id', '')));
       allow delete: if isGlobalAdmin() || (isSignedIn() && request.auth.uid == existing().owner_id);
     }
 
@@ -114,18 +137,12 @@ service cloud.firestore {
     // Coleções gerenciadas pelo dono (Professionals, Services, Units, Working Hours)
     match /professionals/{id} {
       allow read: if true; 
-      allow create: if isBizOwner(incoming().business_id) && isValidId(id) && checkProfLimit(incoming().business_id);
-      allow update: if isBizOwner(existing().business_id) && incoming().business_id == existing().business_id;
-      allow delete: if isBizOwner(existing().business_id);
+      allow create, update, delete: if false; // Must be modified by backend API
     }
 
     match /services/{id} {
       allow read: if true;
-      allow create: if isBizOwner(incoming().business_id) && isValidService(incoming()) && isValidId(id) && checkServiceLimit(incoming().business_id);
-      allow update: if isBizOwner(existing().business_id) && 
-                      isValidService(incoming()) &&
-                      incoming().business_id == existing().business_id;
-      allow delete: if isBizOwner(existing().business_id);
+      allow create, update, delete: if false; // Must be modified by backend API
     }
 
     match /units/{id} {
@@ -150,7 +167,7 @@ service cloud.firestore {
       allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
       allow list: if request.query.limit <= 50; 
       
-      allow create: if isValidAppointment(incoming()) && isValidId(id);
+      allow create: if false; // Only backend admin SDK can create
       allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
                       (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'appointment_date', 'start_time', 'end_time', 'updated_at']));
       allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
@@ -158,7 +175,7 @@ service cloud.firestore {
 
     match /daily_schedules/{id} {
       allow read: if true;
-      allow write: if true; // API books here.
+      allow write: if false; // Only backend API books here securely.
     }
 
     // Clients: CRM
@@ -168,9 +185,9 @@ service cloud.firestore {
       allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
       allow list: if request.query.limit <= 1;
       
-      allow create: if isValidClient(incoming()) && isValidId(clientId);
+      allow create: if false; // Only backend admin SDK can create
       allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at', 'appointments_count', 'total_revenue', 'last_appointment_date']));
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at']));
       allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
     }
 
@@ -183,14 +200,14 @@ service cloud.firestore {
     
     match /loyalty_redemptions/{id} {
       allow read: if true;
-      allow create: if true;
-      allow update: if isBizOwner(resource.data.reward_id) || true; // To refine: this would require fetching reward. Simple allow for now.
+      allow create: if isSignedIn();
+      allow update: if isBizOwner(resource.data.reward_id) || isBizOwner(resource.data.business_id);
       allow delete: if false;
     }
 
     match /system_events/{id} {
       allow read: if isGlobalAdmin() || isSignedIn();
-      allow create: if true; // Allows clients/public tracking to send events
+      allow create: if false; // Only backend admin SDK can create
       allow update, delete: if isGlobalAdmin();
     }
 
@@ -207,8 +224,8 @@ service cloud.firestore {
 
     match /notification_queue/{id} {
       allow read: if true;
-      allow create: if true;
-      allow update: if true;
+      allow create: if false; // Only backend admin SDK can create
+      allow update: if isBizOwner(resource.data.business_id) || isGlobalAdmin();
       allow delete: if false;
     }
 
@@ -221,20 +238,19 @@ service cloud.firestore {
 
     match /loyalty_mission_progress/{id} {
       allow read: if true;
-      allow create, update: if true; // allow system functions and owner
+      allow create, update: if isSignedIn();
       allow delete: if isBizOwner(existing().business_id);
     }
 
     match /loyalty_points/{id} {
       allow read: if true;
-      allow create, update: if true; // allow system functions and owner
+      allow create, update: if isSignedIn();
       allow delete: if isBizOwner(existing().business_id);
     }
 
     match /loyalty_balances/{id} {
       allow read: if true;
-      allow create, update: if true; // allow system functions and owner
-      allow delete: if isBizOwner(existing().business_id);
+      allow create, update, delete: if false; // Must be modified by backend
     }
 
     match /loyalty_levels/{id} {
@@ -281,7 +297,7 @@ service cloud.firestore {
 
     match /processing_queue/{jobId} {
       allow read: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
-      allow create: if true; // allow clients / systems to enqueue things
+      allow create: if false; // Only backend admin SDK can create
       allow update: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
       allow delete: if isGlobalAdmin() || isBizOwner(resource.data.businessId);
     }
@@ -290,7 +306,7 @@ service cloud.firestore {
       allow get: if isGlobalAdmin() || isBizOwner(resource.data.businessId);
       allow list: if isGlobalAdmin();
       allow list: if isBizOwner(resource.data.businessId);
-      allow create, update: if isGlobalAdmin() || true; // allow system to create/update
+      allow create, update: if isGlobalAdmin();
       allow delete: if isGlobalAdmin();
     }
 
@@ -302,7 +318,7 @@ service cloud.firestore {
 
     match /marketing_campaigns/{campaignId} {
       allow read: if isBizOwner(resource.data.businessId);
-      allow create, update: if isBizOwner(request.resource.data.businessId) || true; // allow system to create/update
+      allow create, update: if isBizOwner(request.resource.data.businessId) || isGlobalAdmin();
       allow delete: if isBizOwner(resource.data.businessId);
     }
 
@@ -334,7 +350,7 @@ service cloud.firestore {
     }
 
     match /analytics_events/{id} {
-      allow create: if true;
+      allow create: if false; // Only backend admin SDK can create
       allow read, update, delete: if false;
     }
 

@@ -22,21 +22,20 @@ export default function GlobalDatabase() {
   const [docs, setDocs] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function fetchDocs() {
-     setLoading(true);
-     try {
-         const q = query(collection(db, selectedCol), limit(100)); // Limit for safety
-         const snap = await getDocs(q);
-         setDocs(snap.docs.map(d => ({ id: d.id, _data: d.data() })));
-     } catch (e) {
-         console.error("Error fetching docs", e);
-         toast.error("Erro ao carregar documentos.");
-     } finally {
-         setLoading(false);
-     }
-  }
-
   useEffect(() => {
+     async function fetchDocs() {
+         setLoading(true);
+         try {
+             const q = query(collection(db, selectedCol), limit(100)); // Limit for safety
+             const snap = await getDocs(q);
+             setDocs(snap.docs.map(d => ({ id: d.id, _data: d.data() })));
+         } catch (e) {
+             console.error("Error fetching docs", e);
+             toast.error("Erro ao carregar documentos.");
+         } finally {
+             setLoading(false);
+         }
+     }
      fetchDocs();
   }, [selectedCol]);
 

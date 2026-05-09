@@ -27,13 +27,7 @@ export default function Integrations() {
 
   const isEligible = limits?.whiteLabelPartial;
 
-  useEffect(() => {
-    if (business?.id) {
-      loadConfigs();
-    }
-  }, [business?.id]);
-
-  const loadConfigs = async () => {
+  const loadConfigs = React.useCallback(async () => {
     if (!business?.id) return;
     try {
       const docSnap = await getDoc(doc(db, "business_integrations", business.id));
@@ -46,7 +40,13 @@ export default function Integrations() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [business?.id]);
+
+  useEffect(() => {
+    if (business?.id) {
+      loadConfigs();
+    }
+  }, [business?.id, loadConfigs]);
 
   const saveConfigs = async () => {
     if (!business?.id) return;

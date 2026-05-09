@@ -20,11 +20,22 @@ import { cn } from "@/lib/utils";
 
 const trackEvent = async (name: string, data: Record<string, unknown>) => {
   try {
-    await addDoc(collection(db, "analytics_events"), {
-      name,
-      data,
-      timestamp: serverTimestamp(),
+    const response = await fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+         level: "info",
+         event: name,
+         type: "business_metric",
+         user_id: data?.user_id || "anonymous",
+         business_id: data?.business_id || "system",
+         status: "success",
+         metadata: data
+      })
     });
+    if (!response.ok) {
+      console.error("Error tracking event via api/log");
+    }
   } catch (e) {
     console.error("Error tracking event:", e);
   }

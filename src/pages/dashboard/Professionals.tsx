@@ -70,6 +70,9 @@ const Professionals = () => {
     setLoading(true);
 
     try {
+      const token = await user?.getIdToken();
+      if (!token) throw new Error("Não autorizado");
+
       let avatarUrl = form.avatar_url;
       if (form.file) {
         setUploading(true);
@@ -81,68 +84,43 @@ const Professionals = () => {
         }
       }
 
-      const batch = writeBatch(db);
-      
       const working_hours = { start: form.working_hours_start, end: form.working_hours_end };
 
-      if (form.id) {
-        const profRef = doc(db, "professionals", form.id);
-        const updateData: any = {
-          name: form.name,
-          specialty: form.specialty || null,
-          description: form.description || null,
-          buffer_minutes: form.buffer_minutes,
-          working_hours: working_hours,
-          working_days: form.working_days
-        };
-        if (avatarUrl) {
-          updateData.avatar_url = avatarUrl;
-        }
-        batch.update(profRef, updateData);
-      } else {
-        const newProfRef = doc(collection(db, "professionals"));
-        batch.set(newProfRef, {
-          business_id: business.id,
-          name: form.name,
-          specialty: form.specialty || null,
-          description: form.description || null,
-          avatar_url: avatarUrl || null,
-          is_active: true,
-          buffer_minutes: form.buffer_minutes,
-          working_hours: working_hours,
-          working_days: form.working_days,
-          created_at: serverTimestamp()
-        });
+      const payload = {
+        businessId: business.id,
+        name: form.name,
+        specialty: form.specialty || null,
+        description: form.description || null,
+        buffer_minutes: form.buffer_minutes,
+        working_hours: working_hours,
+        working_days: form.working_days,
+        avatar_url: avatarUrl || null
+      };
 
-        // Aplicar horários padrão se existirem
-        if (business.default_working_hours && business.default_working_hours.length > 0) {
-          business.default_working_hours.filter(h => h.is_active).forEach(h => {
-             const hourRef = doc(collection(db, "working_hours"));
-             batch.set(hourRef, {
-               business_id: business.id,
-               professional_id: newProfRef.id,
-               day_of_week: h.day_of_week,
-               start_time: h.start_time,
-               end_time: h.end_time,
-               created_at: serverTimestamp()
-             });
-          });
-        }
+      const url = form.id ? `/api/professionals/${form.id}` : '/api/professionals';
+      const method = form.id ? 'PUT' : 'POST';
 
-        batch.update(doc(db, "businesses", business.id), {
-          usage_professionals: increment(1)
-        });
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Erro ao salvar profissional");
       }
-
-      await batch.commit();
       
       toast({ title: form.id ? "Profissional atualizado!" : "Profissional adicionado!" });
       setDialogOpen(false);
-      setForm({ id: "", name: "", specialty: "", description: "", avatar_url: "", file: null });
+      setForm({ id: "", name: "", specialty: "", description: "", avatar_url: "", file: null, buffer_minutes: 0, working_hours_start: "08:00", working_hours_end: "18:00", working_days: [1, 2, 3, 4, 5, 6] });
       fetchData();
       refreshBusiness();
     } catch (error: unknown) {
-      handleFirestoreError(error, OperationType.WRITE, "professionals");
+      toast({ title: "Erro", description: (error as Error).message, variant: "destructive" });
     } finally {
       setLoading(false);
       setUploading(false);
@@ -152,18 +130,25 @@ const Professionals = () => {
   const handleDelete = async (id: string) => {
     if (!business) return;
     try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, "professionals", id));
-      batch.update(doc(db, "businesses", business.id), {
-        usage_professionals: increment(-1)
+      const token = await user?.getIdToken();
+      if (!token) throw new Error("Não autorizado");
+      
+      const res = await fetch(`/api/professionals/${id}?businessId=${business.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
-      await batch.commit();
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Erro ao remover profissional");
+      }
 
       toast({ title: "Profissional removido" });
       fetchData();
       refreshBusiness();
     } catch (error: unknown) {
-      handleFirestoreError(error, OperationType.DELETE, `professionals/${id}`);
+      toast({ title: "Erro", description: (error as Error).message, variant: "destructive" });
     }
   };
 

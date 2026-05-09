@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { 
@@ -48,7 +48,7 @@ const CheckIn = () => {
   const [loading, setLoading] = useState(true);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     try {
       const bizQuery = query(collection(db, "businesses"), where("owner_id", "==", user.uid), limit(1));
@@ -97,9 +97,9 @@ const CheckIn = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, selectedDate]);
 
-  useEffect(() => { fetchData(); }, [user, selectedDate]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const isToday = format(selectedDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
 

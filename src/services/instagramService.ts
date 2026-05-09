@@ -66,26 +66,6 @@ export class InstagramService {
   }
 
   static async getCachedPosts(businessId: string): Promise<InstagramPost[]> {
-    if (businessId === "demo-biz") {
-      const unsplashIds = [
-        "1512756290469-ec419888f4b0", // desk
-        "1522071820081-009f0129c71c", // people
-        "1497215728101-856f4ea42174", // office
-        "1497366216548-37526070297c", // hallway
-        "1556761175-5973dc0f32e7", // meeting
-        "1504384308090-c894fdcc538d", // coffee laptop
-      ];
-      return Array.from({ length: 6 }).map((_, i) => ({
-        id: `mock_post_${i}`,
-        business_id: "demo-biz",
-        caption: "Nossas ideias em ação! ✨ #novidades #negocios",
-        media_type: "IMAGE",
-        media_url: `https://images.unsplash.com/photo-${unsplashIds[i]}?auto=format&fit=crop&w=600&h=600&q=80`,
-        permalink: "https://instagram.com",
-        timestamp: new Date().toISOString()
-      }));
-    }
-
     try {
       const q = query(
         collection(db, "instagram_posts"), 

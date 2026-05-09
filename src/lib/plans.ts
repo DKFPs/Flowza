@@ -48,7 +48,7 @@ export const PLANS: Record<PlanId, { id: PlanId, name: string, price: number, st
     name: 'Pro',
     price: 97,
     stripePriceIdMonthly: 'price_1TTV5NLnvMLPfJUGtr1Ypkkm',
-    stripePriceIdAnnually: null,
+    stripePriceIdAnnually: 'price_1TUyVhLnvMLPfJUGkaNitAnJ',
     limits: {
       professionalsLimit: 5,
       servicesLimit: 999, // unlimited
@@ -69,7 +69,7 @@ export const PLANS: Record<PlanId, { id: PlanId, name: string, price: number, st
     price: 197,
     isRecommended: true,
     stripePriceIdMonthly: 'price_1TTV5aLnvMLPfJUGvRFC87OU',
-    stripePriceIdAnnually: null,
+    stripePriceIdAnnually: 'price_1TUyZQLnvMLPfJUGqAL3ZqIL',
     limits: {
       professionalsLimit: 999, // unlimited
       servicesLimit: 999, // unlimited
@@ -90,7 +90,7 @@ export const PLANS: Record<PlanId, { id: PlanId, name: string, price: number, st
     name: 'Premium',
     price: 297,
     stripePriceIdMonthly: 'price_1TTV1sLnvMLPfJUGluNzgczX',
-    stripePriceIdAnnually: null,
+    stripePriceIdAnnually: 'price_1TUyZvLnvMLPfJUGC0A1OhV0',
     limits: {
       professionalsLimit: 999, // unlimited
       servicesLimit: 999, // unlimited

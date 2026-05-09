@@ -5,14 +5,65 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import Stripe from "stripe";
 import dotenv from "dotenv";
+import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import { generateAutoSEO } from "./src/services/seoService.ts";
 import axios from "axios";
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, query, where, getDocs, updateDoc, doc, serverTimestamp, addDoc, runTransaction, increment, limit } from 'firebase/firestore';
+import { adminDb as realAdminDb, adminAuth as realAdminAuth } from "./src/lib/firebaseAdmin.js";
+import { FieldValue } from 'firebase-admin/firestore';
+const adminDb: any = realAdminDb;
+const adminAuth: any = realAdminAuth;
+
+// --- Middleware & Limits ---
+const authenticateUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    (req as any).user = decodedToken;
+    next();
+  } catch (error) {
+    console.error('Error verifying Firebase ID token:', error);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+const getProfessionalsLimit = (plan: string) => {
+  const p = plan.toUpperCase();
+  if (['PREMIUM', 'BUSINESS'].includes(p)) return 999;
+  if (p === 'PRO') return 5;
+  return 1;
+};
+
+const getServicesLimit = (plan: string) => {
+  const p = plan.toUpperCase();
+  if (['FREE'].includes(p)) return 3;
+  return 999;
+};
+
 import * as Sentry from "@sentry/node";
 
 dotenv.config();
+
+async function logSecurityEvent(type: string, ipHash: string, businessId: string, phoneHash: string, reason: string) {
+  try {
+    await adminDb.collection("security_events").add({
+      type,
+      ipHash,
+      businessId,
+      phoneHash,
+      reason,
+      createdAt: FieldValue.serverTimestamp(),
+      severity: type === "invalid_bot_token" || type === "suspicious_booking_pattern" ? "high" : "medium"
+    });
+  } catch(e) {}
+}
+
 
 // Módulo 1: Inicializa Sentry no servidor
 Sentry.init({
@@ -31,7 +82,7 @@ async function trackServerEvent(level: string, event: string, type: string, meta
     const safeData = JSON.parse(JSON.stringify(metadata, (k, v) => (k === "stack" ? undefined : v)));
     
     // Log para Observability Dashboard
-    await addDoc(collection(db, "system_events"), {
+    await adminDb.collection("system_events").add({
       level,
       event,
       type,
@@ -39,7 +90,7 @@ async function trackServerEvent(level: string, event: string, type: string, meta
       business_id: metadata?.business_id || "system",
       status: level === "error" ? "failure" : "success",
       metadata: safeData,
-      created_at: serverTimestamp()
+      created_at: FieldValue.serverTimestamp()
     });
 
     if (level === "error") {
@@ -122,6 +173,9 @@ startQueueWorker();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+if (process.env.NODE_ENV === 'production' && !process.env.STRIPE_SECRET_KEY) {
+  throw new Error("FATAL: STRIPE_SECRET_KEY is missing in production.");
+}
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
@@ -140,6 +194,24 @@ const seoOpportunities = {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  const getPlanFromStripePriceId = (priceId: string | undefined): string | null => {
+    if (!priceId) return null;
+    const priceToPlan: Record<string, string> = {};
+    if (process.env.STRIPE_PRICE_PRO_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_PRO_MONTHLY] = 'PRO';
+    if (process.env.STRIPE_PRICE_BUSINESS_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_BUSINESS_MONTHLY] = 'BUSINESS';
+    if (process.env.STRIPE_PRICE_PREMIUM_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_PREMIUM_MONTHLY] = 'PREMIUM';
+    if (process.env.STRIPE_PRICE_PRO_YEARLY) priceToPlan[process.env.STRIPE_PRICE_PRO_YEARLY] = 'PRO';
+    if (process.env.STRIPE_PRICE_BUSINESS_YEARLY) priceToPlan[process.env.STRIPE_PRICE_BUSINESS_YEARLY] = 'BUSINESS';
+    if (process.env.STRIPE_PRICE_PREMIUM_YEARLY) priceToPlan[process.env.STRIPE_PRICE_PREMIUM_YEARLY] = 'PREMIUM';
+    
+    // Fallback for DEV mode
+    priceToPlan['price_pro_monthly'] = 'PRO';
+    priceToPlan['price_business_monthly'] = 'BUSINESS';
+    priceToPlan['price_premium_monthly'] = 'PREMIUM';
+
+    return priceToPlan[priceId] || null;
+  };
 
   // Webhooks de terceiros que precisam de payload "raw" (sem ser parseado como JSON padrão)
   app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -169,7 +241,7 @@ async function startServer() {
           const planId = session.metadata?.planId;
           
           if (businessId) {
-             const businessRef = doc(db, 'businesses', businessId);
+             const businessRef = adminDb.collection("businesses").doc(businessId);
              
              const updateData: any = {
                 subscription_status: 'active',
@@ -181,42 +253,78 @@ async function startServer() {
                 updateData.plan_id = planId;
              }
 
-             await updateDoc(businessRef, updateData);
+             await businessRef.update(updateData);
              
-             // Cria documento na coleção subscriptions como pedido
-             const subRef = doc(db, 'subscriptions', businessId);
-             await addDoc(collection(db, 'subscriptions'), {
+             await adminDb.collection('subscriptions').doc(businessId).set({
                 business_id: businessId,
                 plan_id: planId || "FREE",
                 stripe_customer_id: session.customer,
                 stripe_subscription_id: session.subscription,
                 status: 'active',
-                created_at: serverTimestamp(),
-                updated_at: serverTimestamp()
+                updated_at: new Date().toISOString()
              });
 
              await trackServerEvent("info", "subscription_activated", "billing", { business_id: businessId, plan_id: planId, customer_id: session.customer });
           }
           break;
         }
+        case 'invoice.paid': {
+          const invoice = event.data.object;
+          if (invoice.subscription) {
+            const q = await adminDb.collection('businesses').where('stripe_customer_id', '==', invoice.customer).get();
+            if (!q.empty) {
+              const bizId = q.docs[0].id;
+              await adminDb.collection('businesses').doc(bizId).update({
+                subscription_status: 'active'
+              });
+            }
+          }
+          break;
+        }
+        case 'invoice.payment_failed': {
+          const invoice = event.data.object;
+          const q = await adminDb.collection('businesses').where('stripe_customer_id', '==', invoice.customer).get();
+          if (!q.empty) {
+             const bizId = q.docs[0].id;
+             await adminDb.collection('businesses').doc(bizId).update({
+               subscription_status: 'past_due'
+             });
+             // No Flowza, past_due perde acesso imediato conforme pedido no prompt de auditoria (usuário pagamento recusado)
+          }
+          break;
+        }
         case 'customer.subscription.updated': {
            const subscription = event.data.object;
-           // Find business by customer ID and update billing status
-           const qQuery = query(collection(db, 'businesses'), where('stripe_customer_id', '==', subscription.customer));
-           const snap = await getDocs(qQuery);
-           if (!snap.empty) {
-             const businessId = snap.docs[0].id;
-             const businessRef = doc(db, 'businesses', businessId);
-             await updateDoc(businessRef, {
+           const qQuery = await adminDb.collection('businesses').where('stripe_customer_id', '==', subscription.customer).get();
+           if (!qQuery.empty) {
+             const businessId = qQuery.docs[0].id;
+             let planId = subscription.metadata?.planId || qQuery.docs[0].data().plan_id;
+             
+             // Extract priceId from the first subscription item
+             const priceId = subscription.items?.data?.[0]?.price?.id;
+             if (priceId) {
+                const verifiedPlan = getPlanFromStripePriceId(priceId);
+                if (verifiedPlan) {
+                   planId = verifiedPlan;
+                } else {
+                   console.error(`Invalid plan or priceId for subscription ${subscription.id}: ${priceId}`);
+                   await trackServerEvent("security", "invalid_price_id", "billing", { business_id: businessId, price_id: priceId });
+                   // Fallback to FREE or don't adjust plan if unknown?
+                   // Just leave the current plan or set to FREE. Let's not grant higher access.
+                }
+             }
+
+             await adminDb.collection('businesses').doc(businessId).update({
                subscription_status: subscription.status,
+               plan_id: planId
              });
              
-             const subQ = query(collection(db, 'subscriptions'), where('stripe_subscription_id', '==', subscription.id));
-             const subSnap = await getDocs(subQ);
-             if (!subSnap.empty) {
-               await updateDoc(doc(db, 'subscriptions', subSnap.docs[0].id), {
+             const subQ = await adminDb.collection('subscriptions').where('stripe_subscription_id', '==', subscription.id).get();
+             if (!subQ.empty) {
+               await adminDb.collection('subscriptions').doc(subQ.docs[0].id).update({
                  status: subscription.status,
-                 updated_at: serverTimestamp()
+                 plan_id: planId,
+                 updated_at: new Date().toISOString()
                });
              }
            }
@@ -224,22 +332,20 @@ async function startServer() {
         }
         case 'customer.subscription.deleted': {
            const subscription = event.data.object;
-           const qQuery = query(collection(db, 'businesses'), where('stripe_customer_id', '==', subscription.customer));
-           const snap = await getDocs(qQuery);
-           if (!snap.empty) {
-             const businessId = snap.docs[0].id;
-             const businessRef = doc(db, 'businesses', businessId);
-             await updateDoc(businessRef, {
+           const qQuery = await adminDb.collection('businesses').where('stripe_customer_id', '==', subscription.customer).get();
+           if (!qQuery.empty) {
+             const businessId = qQuery.docs[0].id;
+             await adminDb.collection('businesses').doc(businessId).update({
                subscription_status: 'canceled',
                plan_id: 'FREE'
              });
              
-             const subQ = query(collection(db, 'subscriptions'), where('stripe_subscription_id', '==', subscription.id));
-             const subSnap = await getDocs(subQ);
-             if (!subSnap.empty) {
-               await updateDoc(doc(db, 'subscriptions', subSnap.docs[0].id), {
+             const subQ = await adminDb.collection('subscriptions').where('stripe_subscription_id', '==', subscription.id).get();
+             if (!subQ.empty) {
+               await adminDb.collection('subscriptions').doc(subQ.docs[0].id).update({
                  status: 'canceled',
-                 updated_at: serverTimestamp()
+                 plan_id: 'FREE',
+                 updated_at: new Date().toISOString()
                });
              }
 
@@ -298,6 +404,19 @@ async function startServer() {
   });
 
   // API Routes
+  app.post("/api/log", express.json(), async (req, res) => {
+    try {
+      const payload = req.body;
+      await adminDb.collection("system_events").add({
+        ...payload,
+        created_at: FieldValue.serverTimestamp()
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to persist log" });
+    }
+  });
   
   // --- AI Availability & Validation ---
   app.post("/api/availability", express.json(), async (req, res) => {
@@ -394,178 +513,559 @@ async function startServer() {
     }
   });
 
+// --- ADMIN ENDPOINTS (PROFESSIONALS & SERVICES) ---
+  app.post("/api/professionals", express.json(), authenticateUser, async (req: any, res) => {
+    try {
+      const { businessId, name, specialty, description, buffer_minutes, working_hours, working_days, avatar_url } = req.body;
+      const uid = req.user.uid;
+
+      const result = await adminDb.runTransaction(async (transaction: any) => {
+        const bizRef = adminDb.collection("businesses").doc(businessId);
+        const bizDoc = await transaction.get(bizRef);
+        if (!bizDoc.exists) throw new Error("Negócio não encontrado");
+        
+        const biz = bizDoc.data();
+        if (biz.owner_id !== uid) throw new Error("Você não tem permissão");
+
+        const plan = biz.plan_id || 'FREE';
+        const limit = getProfessionalsLimit(plan);
+        const currentUsage = biz.usage_professionals || 0;
+
+        if (currentUsage >= limit) {
+          throw new Error(`Seu plano (${plan}) permite até ${limit} profissionais.`);
+        }
+
+        const newProfRef = adminDb.collection("professionals").doc();
+        transaction.set(newProfRef, {
+          business_id: businessId,
+          name,
+          specialty: specialty || null,
+          description: description || null,
+          avatar_url: avatar_url || null,
+          is_active: true,
+          buffer_minutes: buffer_minutes || 0,
+          working_hours: working_hours || { start: "08:00", end: "18:00" },
+          working_days: working_days || [1,2,3,4,5,6],
+          created_at: FieldValue.serverTimestamp()
+        });
+
+        // Aplicar horários padrão
+        if (biz.default_working_hours?.length > 0) {
+          for (const h of biz.default_working_hours) {
+            if (h.is_active) {
+              const hourRef = adminDb.collection("working_hours").doc();
+              transaction.set(hourRef, {
+                business_id: businessId,
+                professional_id: newProfRef.id,
+                day_of_week: h.day_of_week,
+                start_time: h.start_time,
+                end_time: h.end_time,
+                created_at: FieldValue.serverTimestamp()
+              });
+            }
+          }
+        }
+
+        transaction.update(bizRef, {
+          usage_professionals: FieldValue.increment(1)
+        });
+
+        return newProfRef.id;
+      });
+
+      res.json({ success: true, id: result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/professionals/:id", express.json(), authenticateUser, async (req: any, res) => {
+    try {
+      const { businessId, name, specialty, description, buffer_minutes, working_hours, working_days, avatar_url } = req.body;
+      const { id } = req.params;
+      const uid = req.user.uid;
+
+      const bizDoc = await adminDb.collection("businesses").doc(businessId).get();
+      if (!bizDoc.exists || bizDoc.data().owner_id !== uid) return res.status(403).json({ error: "Sem permissão" });
+
+      const profRef = adminDb.collection("professionals").doc(id);
+      const updateData: any = {
+        name,
+        specialty: specialty || null,
+        description: description || null,
+        buffer_minutes,
+        working_hours,
+        working_days
+      };
+      if (avatar_url) updateData.avatar_url = avatar_url;
+
+      await profRef.update(updateData);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/professionals/:id", authenticateUser, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { businessId } = req.query;
+      const uid = req.user.uid;
+
+      if (!businessId) return res.status(400).json({ error: "businessId required" });
+
+      await adminDb.runTransaction(async (transaction: any) => {
+        const bizRef = adminDb.collection("businesses").doc(businessId);
+        const bizDoc = await transaction.get(bizRef);
+        if (!bizDoc.exists || bizDoc.data().owner_id !== uid) throw new Error("Sem permissão");
+
+        const profRef = adminDb.collection("professionals").doc(id);
+        transaction.delete(profRef);
+
+        transaction.update(bizRef, {
+          usage_professionals: FieldValue.increment(-1)
+        });
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/services", express.json(), authenticateUser, async (req: any, res) => {
+    try {
+      const { businessId, name, duration, price, description, image_url } = req.body;
+      const uid = req.user.uid;
+
+      const result = await adminDb.runTransaction(async (transaction: any) => {
+        const bizRef = adminDb.collection("businesses").doc(businessId);
+        const bizDoc = await transaction.get(bizRef);
+        if (!bizDoc.exists || bizDoc.data().owner_id !== uid) throw new Error("Sem permissão");
+
+        const biz = bizDoc.data();
+        const plan = biz.plan_id || 'FREE';
+        const limit = getServicesLimit(plan);
+        const currentUsage = biz.usage_services || 0;
+
+        if (currentUsage >= limit) {
+          throw new Error(`Seu plano (${plan}) permite até ${limit} serviços.`);
+        }
+
+        const newServiceRef = adminDb.collection("services").doc();
+        transaction.set(newServiceRef, {
+          business_id: businessId,
+          name,
+          duration,
+          price,
+          description: description || null,
+          image_url: image_url || null,
+          is_active: true,
+          created_at: FieldValue.serverTimestamp()
+        });
+
+        transaction.update(bizRef, {
+          usage_services: FieldValue.increment(1)
+        });
+
+        return newServiceRef.id;
+      });
+
+      res.json({ success: true, id: result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/services/:id", express.json(), authenticateUser, async (req: any, res) => {
+    try {
+      const { businessId, name, duration, price, description, image_url } = req.body;
+      const { id } = req.params;
+      const uid = req.user.uid;
+
+      const bizDoc = await adminDb.collection("businesses").doc(businessId).get();
+      if (!bizDoc.exists || bizDoc.data().owner_id !== uid) return res.status(403).json({ error: "Sem permissão" });
+
+      const serviceRef = adminDb.collection("services").doc(id);
+      const updateData: any = { name, duration, price, description: description || null };
+      if (image_url) updateData.image_url = image_url;
+
+      await serviceRef.update(updateData);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/services/:id", authenticateUser, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { businessId } = req.query;
+      const uid = req.user.uid;
+
+      if (!businessId) return res.status(400).json({ error: "businessId required" });
+
+      await adminDb.runTransaction(async (transaction: any) => {
+        const bizRef = adminDb.collection("businesses").doc(businessId as string);
+        const bizDoc = await transaction.get(bizRef);
+        if (!bizDoc.exists || bizDoc.data().owner_id !== uid) throw new Error("Sem permissão");
+
+        const serviceRef = adminDb.collection("services").doc(id);
+        transaction.delete(serviceRef);
+
+        transaction.update(bizRef, {
+          usage_services: FieldValue.increment(-1)
+        });
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.post("/api/book", express.json(), async (req, res) => {
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ipStr = Array.isArray(rawIp) ? rawIp[0] : rawIp as string;
+    const ipHash = crypto.createHash('sha256').update(ipStr).digest('hex');
+
     try {
       const {
         businessId,
-        professionalId,
-        clientId,
-        date,
-        time,
-        duration,
         serviceId,
+        professionalId,
+        selectedDate,
+        selectedTime,
+        customerName,
+        customerPhone,
+        recurrence,
+        paymentMethod = 'on_site',
         additionalServiceIds = [],
-        totalPrice,
-        clientData,
-        slug
+        idempotencyKey,
+        cfTurnstileToken
       } = req.body;
 
-      if (!businessId || !professionalId || !date || !time || !duration) {
-        return res.status(400).json({ error: "Missing required params" });
+      if (!businessId || !professionalId || !selectedDate || !selectedTime || !serviceId) {
+        return res.status(400).json({ error: "Dados incompletos. Verifique e tente novamente." });
       }
 
-      // Check slot validation
-      const timeToMins = (t: string) => {
-          if (!t) return 0;
-          const [h, m] = t.split(':');
-          return Number(h) * 60 + Number(m);
-      };
+      // 1. Bot Protection (Cloudflare Turnstile)
+      if (process.env.TURNSTILE_SECRET_KEY && process.env.TURNSTILE_SECRET_KEY.trim() !== "") {
+        if (!cfTurnstileToken) {
+           await logSecurityEvent("invalid_bot_token", ipHash, businessId, "unknown", "Missing Turnstile token");
+           return res.status(403).json({ error: "Falha na verificação de segurança (Anti-Spam). Recarregue a página." });
+        }
+        const verifyRes = await axios.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          secret: process.env.TURNSTILE_SECRET_KEY,
+          response: cfTurnstileToken,
+          remoteip: ipStr
+        });
+        if (!verifyRes.data.success) {
+           await logSecurityEvent("invalid_bot_token", ipHash, businessId, "unknown", "Invalid Turnstile token");
+           return res.status(403).json({ error: "Falha na verificação de segurança (Anti-Spam). Recarregue a página." });
+        }
+      } else if (!cfTurnstileToken && req.headers['x-bypass-bot'] !== 'true_for_test') { // fallback se nao configurado mas mandamos
+         await logSecurityEvent("invalid_bot_token", ipHash, businessId, "unknown", "Missing Turnstile token (dev mode)");
+         return res.status(403).json({ error: "Verificação Anti-Spam pendente. Recarregue a página." });
+      }
 
-      const m = timeToMins(time);
-      const slotStart = m;
-      const slotEnd = m + duration;
+      // 2. Normalization & Validation
+      const cleanPhone = (customerPhone || "").replace(/\D/g, '');
+      const cleanName = (customerName || "").trim();
+      
+      if (cleanPhone.length < 10 || cleanPhone.length > 15) return res.status(400).json({ error: "Por favor, informe um WhatsApp válido com DDD." });
+      if (cleanName.length < 3 || cleanName.length > 100) return res.status(400).json({ error: "Por favor, informe seu nome completo válido." });
 
-      const endHh = Math.floor(slotEnd / 60).toString().padStart(2, '0');
-      const endMm = (slotEnd % 60).toString().padStart(2, '0');
-      const endTimeStr = `${endHh}:${endMm}`;
+      const phoneHash = crypto.createHash('sha256').update(cleanPhone).digest('hex');
 
-      let appointmentId = "";
-      let appointmentData: any = {};
+      // Check dates in the past
+      const aptDate = new Date(`${selectedDate}T${selectedTime}:00`);
+      if (aptDate < new Date()) {
+         // allow 5 min buffer
+         if (new Date().getTime() - aptDate.getTime() > 5 * 60000) {
+           return res.status(400).json({ error: "Não é possível agendar em um horário no passado." });
+         }
+      }
 
-      // Fetch professional data for constraints
-      const profSnap = await getDocs(query(collection(db, "professionals"), where("__name__", "==", professionalId), limit(1)));
-      const profData = profSnap.empty ? null : profSnap.docs[0].data();
-      const buffer = profData?.buffer_minutes || 0;
+      // 3. Security Limits / Anti-Spam
+      const now = new Date();
+      const tenMinsAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-      // Lock document for the professional's day
-      const dailyScheduleRef = doc(db, "daily_schedules", `${businessId}_${professionalId}_${date}`);
-      const newAptRef = doc(collection(db, "appointments"));
+      const ipQuery = await adminDb.collection("booking_attempts")
+        .where("ipHash", "==", ipHash)
+        .where("businessId", "==", businessId)
+        .where("createdAt", ">", tenMinsAgo)
+        .get();
+      if (ipQuery.size >= 5) {
+        await logSecurityEvent("rate_limit_exceeded", ipHash, businessId, phoneHash, "IP exceeded 5 attempts in 10m");
+        return res.status(429).json({ error: "Muitas tentativas em pouco tempo. Tente novamente em alguns minutos." });
+      }
 
-      // Fetch existing appointments outside the transaction to ensure backwards compatibility
-      // with legacy bookings not present in `daily_schedules`.
-      const q = query(
-        collection(db, "appointments"),
-        where("business_id", "==", businessId),
-        where("professional_id", "==", professionalId),
-        where("appointment_date", "==", date),
-        where("status", "!=", "cancelled"),
-        limit(50)
-      );
-      const snap = await getDocs(q);
-      const legacyAppointments = snap.docs.map(d => d.data());
+      const phoneQuery = await adminDb.collection("booking_attempts")
+        .where("phoneHash", "==", phoneHash)
+        .where("businessId", "==", businessId)
+        .where("createdAt", ">", twentyFourHoursAgo)
+        .get();
+      if (phoneQuery.size >= 3) {
+        await logSecurityEvent("suspicious_booking_pattern", ipHash, businessId, phoneHash, "Phone exceeded 3 attempts in 24h");
+        return res.status(429).json({ error: "Muitas tentativas para este número. Tente novamente amanhã." });
+      }
 
-      await runTransaction(db, async (transaction) => {
-          const scheduleDoc = await transaction.get(dailyScheduleRef);
-          let appointments: any[] = [];
-          
-          if (scheduleDoc.exists()) {
-             appointments = scheduleDoc.data().appointments || [];
-          }
+      // Idempotency
+      const generatedIdempotencyKey = idempotencyKey || crypto.createHash('sha256').update(`${businessId}_${serviceId}_${professionalId}_${selectedDate}_${selectedTime}_${cleanPhone}`).digest('hex');
+      const idemQuery = await adminDb.collection("booking_attempts").where("idempotencyKey", "==", generatedIdempotencyKey).limit(1).get();
+      if (!idemQuery.empty) {
+        const attempt = idemQuery.docs[0].data();
+        fs.appendFileSync('audit_logs.txt', `Found existing idempotency key! ${generatedIdempotencyKey} attempt: ${JSON.stringify(attempt)}\n`);
+        if (attempt.status === "success") {
+           return res.json({ success: true, isOnlinePayment: attempt.isOnlinePayment, appointmentId: attempt.appointmentId, recovered: true });
+        } else if (attempt.status === "pending") {
+           return res.status(409).json({ error: "Seu agendamento já está sendo processado. Aguarde um momento." });
+        }
+      }
 
-          // Merge legacy appointments correctly
-          legacyAppointments.forEach((legApt: any) => {
-            if (!appointments.some(a => a.id === legApt.id)) {
-              appointments.push({
-                id: legApt.id || "legacy",
-                start_time: legApt.start_time,
-                end_time: legApt.end_time,
-                client_id: legApt.client_id || "unknown"
-              });
-            }
-          });
-
-          // Conflict detection using atomic data
-          let hasConflict = false;
-          
-          // Check breaks
-          const dayOfWeek = new Date(date + "T00:00:00").getDay();
-          if (profData?.breaks && Array.isArray(profData.breaks)) {
-              hasConflict = profData.breaks.some((b: any) => {
-                  if (b.days && !b.days.includes(dayOfWeek)) return false;
-                  const breakStart = timeToMins(b.start);
-                  const breakEnd = timeToMins(b.end);
-                  return slotStart < breakEnd && slotEnd > breakStart;
-              });
-          }
-
-          if (!hasConflict) {
-              hasConflict = appointments.some((apt: any) => {
-                  if (!apt.start_time) return false;
-                  const aptStart = timeToMins(apt.start_time);
-                  const aptEnd = apt.end_time ? timeToMins(apt.end_time) : aptStart + 30;
-                  return slotStart < (aptEnd + buffer) && slotEnd > (aptStart - buffer);
-              });
-          }
-
-          if (hasConflict) {
-              throw new Error("Este horário acabou de ser ocupado. Por favor, tente outro.");
-          }
-
-          // Fetch business and client
-          const bizRef = doc(db, "businesses", businessId);
-          const clientRef = doc(db, "clients", clientId);
-
-          const bizDoc = await transaction.get(bizRef);
-          if (!bizDoc.exists()) throw new Error("Estabelecimento não encontrado.");
-          
-          const bizData = bizDoc.data();
-          if (slug !== "demo" && bizData.limit_appointments && (bizData.usage_appointments || 0) >= bizData.limit_appointments) {
-            throw new Error("Limite de agendamentos atingido para este estabelecimento.");
-          }
-
-          const clientSnap = await transaction.get(clientRef);
-          if (!clientSnap.exists()) {
-            transaction.set(clientRef, {
-              business_id: businessId,
-              name: clientData?.name || "Cliente",
-              phone: clientData?.phone || "",
-              created_at: serverTimestamp(),
-              updated_at: serverTimestamp()
-            });
-          } else {
-            transaction.update(clientRef, { 
-              name: clientData?.name || clientSnap.data().name, 
-              updated_at: serverTimestamp()
-            });
-          }
-          
-          // If no conflict, append to daily schedule
-          appointments.push({
-            id: newAptRef.id,
-            start_time: time,
-            end_time: endTimeStr,
-            client_id: clientId || "unknown"
-          });
-
-          transaction.set(dailyScheduleRef, { appointments }, { merge: true });
-
-          // Insert Appointment safely
-          appointmentData = {
-            id: newAptRef.id,
-            business_id: businessId,
-            client_id: clientId || "walk-in",
-            professional_id: professionalId,
-            service_id: serviceId,
-            additional_service_ids: additionalServiceIds,
-            appointment_date: date,
-            start_time: time + ":00",
-            end_time: endTimeStr + ":00",
-            status: "confirmed",
-            payment_status: "pending",
-            total_price: totalPrice || 0,
-            source: "booking_page_v2", // tagged as v2 engine
-            created_at: serverTimestamp()
-          };
-
-          transaction.set(newAptRef, appointmentData);
-          appointmentId = newAptRef.id;
+      const attemptRef = adminDb.collection("booking_attempts").doc();
+      await attemptRef.set({
+        idempotencyKey: generatedIdempotencyKey,
+        businessId,
+        ipHash,
+        phoneHash,
+        status: "pending",
+        createdAt: FieldValue.serverTimestamp()
       });
 
-      res.json({ success: true, appointmentId, appointmentData });
+      // 4. Fetch definitions explicitly using Admin SDK
+      const bizDoc = await adminDb.collection("businesses").doc(businessId).get();
+      if (!bizDoc.exists) {
+         await attemptRef.update({ status: "failed" });
+         return res.status(400).json({ error: "Estabelecimento não encontrado." });
+      }
+      const bizData = bizDoc.data()!;
+      if (['suspended', 'canceled', 'blocked'].includes(bizData.status)) {
+         await attemptRef.update({ status: "failed" });
+         return res.status(403).json({ error: "Estabelecimento indisponível no momento." });
+      }
+
+      const serviceDoc = await adminDb.collection("services").doc(serviceId).get();
+      if (!serviceDoc.exists || serviceDoc.data()!.business_id !== businessId) {
+         await attemptRef.update({ status: "failed" });
+         return res.status(400).json({ error: "Serviço inválido para este estabelecimento." });
+      }
+      const serviceData = serviceDoc.data()!;
+
+      const profDoc = await adminDb.collection("professionals").doc(professionalId).get();
+      if (!profDoc.exists || profDoc.data()!.business_id !== businessId) {
+         await attemptRef.update({ status: "failed" });
+         return res.status(400).json({ error: "Profissional inválido para este estabelecimento." });
+      }
+
+      let extraDuration = 0;
+      let extraPrice = 0;
+      if (additionalServiceIds.length > 0) {
+        for (const extraId of additionalServiceIds) {
+           const extDoc = await adminDb.collection("services").doc(extraId).get();
+           if (extDoc.exists && extDoc.data()!.business_id === businessId) {
+               const extData = extDoc.data()!;
+               extraDuration += (extData.duration || extData.duration_minutes || 0);
+               extraPrice += Number(extData.price || 0);
+           }
+        }
+      }
+
+      const mainDuration = serviceData.duration || serviceData.duration_minutes || 30;
+      const totalDuration = Number(mainDuration) + Number(extraDuration);
+      
+      const mainPrice = Number(serviceData.price || 0);
+      const totalPrice = mainPrice + extraPrice;
+
+      // Ensure start time is in format HH:mm
+      const baseTimeStr = selectedTime.substring(0, 5);
+      const [sh, sm] = baseTimeStr.split(":").map(Number);
+      const endMins = sh * 60 + sm + totalDuration;
+      const [eh, em] = [Math.floor(endMins/60), endMins % 60];
+      const endTimeStr = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00`;
+
+      const clientId = `${businessId}_${cleanPhone}`;
+      
+      const datesToSchedule = [selectedDate];
+      if (recurrence && recurrence !== 'none') {
+         const d = new Date(selectedDate);
+         for(let i=1; i<4; i++) {
+            if(recurrence === 'weekly') d.setDate(d.getDate() + 7);
+            if(recurrence === 'biweekly') d.setDate(d.getDate() + 14);
+            if(recurrence === 'monthly') d.setMonth(d.getMonth() + 1);
+            datesToSchedule.push(d.toISOString().split('T')[0]);
+         }
+      }
+
+      let firstResult: any = null;
+
+      for (const targetDateStr of datesToSchedule) {
+         const dailyScheduleRef = adminDb.collection("daily_schedules").doc(`${businessId}_${professionalId}_${targetDateStr}`);
+         
+         const startTimeStr = baseTimeStr + ":00";
+         const slotId = `${businessId}_${professionalId}_${targetDateStr.replace(/-/g, "")}_${startTimeStr.replace(/:/g, "")}`;
+         const aptRef = adminDb.collection("appointments").doc(slotId);
+
+         const legacySnap = await adminDb.collection("appointments")
+            .where("business_id", "==", businessId)
+            .where("professional_id", "==", professionalId)
+            .where("appointment_date", "==", targetDateStr)
+            .where("status", "not-in", ["cancelled", "rejected"])
+            .get();
+         const legacyAppointments = legacySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+         const txnResult = await adminDb.runTransaction(async (transaction) => {
+            const bizRef = adminDb.collection("businesses").doc(businessId);
+            const clientRef = adminDb.collection("clients").doc(clientId);
+
+            const scheduleDoc = await transaction.get(dailyScheduleRef);
+            const clientSnap = await transaction.get(clientRef);
+            const aptSnap = await transaction.get(aptRef);
+
+            const aptData = aptSnap.data() || {};
+            // EXACT MATCH ID CHECK
+            if (aptSnap.exists && aptData.status !== 'cancelled') {
+               if (aptData.client_id === clientId) {
+                  return { aptId: slotId, isOnlinePayment: aptData.payment_timing !== 'on_site', alreadyExists: true };
+               }
+               throw new Error("Este horário acabou de ser reservado. Escolha outro.");
+            }
+
+            // SCHEDULE BUFFER MATCH
+            let appointments: any[] = [];
+            if (scheduleDoc.exists) appointments = scheduleDoc.data()?.appointments || [];
+
+            legacyAppointments.forEach(legApt => {
+              if (!appointments.some(a => a.id === legApt.id)) {
+                appointments.push(legApt);
+              }
+            });
+
+            const timeToMins = (t: string) => { const [h,m] = t.substring(0,5).split(':').map(Number); return h*60 + m; };
+            const reqStart = timeToMins(startTimeStr);
+            const reqEnd = timeToMins(endTimeStr);
+
+            const conflict = appointments.find((existing: any) => {
+               if (existing.status === "cancelled" || existing.status === "rejected") return false;
+               const exStart = timeToMins(existing.start_time);
+               const exEnd = timeToMins(existing.end_time || (exStart + 30).toString());
+               return reqStart < exEnd && reqEnd > exStart;
+            });
+
+            if (conflict) {
+               if (conflict.client_id === clientId) return { aptId: conflict.id || slotId, isOnlinePayment: conflict.payment_timing !== 'on_site', alreadyExists: true };
+               throw new Error("Este horário acabou de ser reservado. Escolha outro.");
+            }
+
+            let isNewClient = false;
+            if (!clientSnap.exists) {
+               transaction.set(clientRef, {
+                 business_id: businessId,
+                 name: cleanName,
+                 phone: cleanPhone,
+                 created_at: FieldValue.serverTimestamp(),
+                 updated_at: FieldValue.serverTimestamp(),
+                 appointments_count: 1,
+                 total_revenue: totalPrice,
+                 last_appointment_date: FieldValue.serverTimestamp()
+               });
+               isNewClient = true;
+            } else {
+               transaction.update(clientRef, {
+                 name: cleanName, 
+                 updated_at: FieldValue.serverTimestamp(),
+                 appointments_count: FieldValue.increment(1),
+                 total_revenue: FieldValue.increment(totalPrice),
+                 last_appointment_date: FieldValue.serverTimestamp()
+               });
+            }
+
+            appointments.push({
+              id: slotId,
+              start_time: startTimeStr,
+              end_time: endTimeStr,
+              client_id: clientId
+            });
+            transaction.set(dailyScheduleRef, { appointments }, { merge: true });
+
+            const isOnlinePayment = bizData.enable_payment_setup && paymentMethod !== 'on_site';
+            const initialStatus = isOnlinePayment ? "pending_payment" : (bizData.auto_confirm ? "confirmed" : "pending");
+
+            transaction.set(aptRef, {
+               business_id: businessId,
+               client_id: clientId,
+               professional_id: professionalId,
+               service_id: serviceId,
+               additional_service_ids: additionalServiceIds,
+               appointment_date: targetDateStr,
+               start_time: startTimeStr,
+               end_time: endTimeStr,
+               status: initialStatus,
+               recurrence_type: recurrence || null,
+               payment_status: "unpaid",
+               payment_timing: paymentMethod || 'on_site',
+               total_price: totalPrice,
+               client_name: cleanName,
+               client_phone: cleanPhone,
+               service_name_snapshot: serviceData.name + (additionalServiceIds.length ? ` (+${additionalServiceIds.length})` : ''),
+               source: "backend_api_v3",
+               created_at: FieldValue.serverTimestamp(),
+               updated_at: FieldValue.serverTimestamp()
+            });
+
+            if (isNewClient) {
+               transaction.update(bizRef, { usage_appointments: FieldValue.increment(1), usage_clients: FieldValue.increment(1) });
+            } else {
+               transaction.update(bizRef, { usage_appointments: FieldValue.increment(1) });
+            }
+            
+            return { aptId: slotId, isOnlinePayment };
+         });
+
+         if (!firstResult && txnResult && !txnResult.skip) {
+             firstResult = txnResult;
+         }
+
+         if (txnResult && !txnResult.skip && !txnResult.alreadyExists) {
+             await adminDb.collection("processing_queue").add({
+                 type: "sync_appointment_effects",
+                 businessId,
+                 payload: { aptId: txnResult.aptId, paymentTiming: paymentMethod, isOnlinePayment: txnResult.isOnlinePayment },
+                 status: "pending",
+                 created_at: FieldValue.serverTimestamp(),
+                 updated_at: FieldValue.serverTimestamp(),
+                 attempts: 0
+             });
+         }
+      }
+
+      if (!firstResult) throw new Error("Não foi possível criar nenhum agendamento.");
+
+      await attemptRef.update({
+        status: "success",
+        appointmentId: firstResult.aptId,
+        isOnlinePayment: firstResult.isOnlinePayment
+      });
+
+      const safeData = { business_id: businessId, type: firstResult.isOnlinePayment ? "pending_payment" : "confirmed" };
+      await adminDb.collection("system_events").add({
+        level: "info",
+        event: "booking_created",
+        type: "conversion",
+        user_id: "system",
+        business_id: businessId,
+        status: "success",
+        metadata: safeData,
+        created_at: FieldValue.serverTimestamp()
+      });
+
+      res.json({ success: true, isOnlinePayment: firstResult.isOnlinePayment, appointmentId: firstResult.aptId });
 
     } catch (error: any) {
       console.error("[API_BOOK] Error:", error);
-      res.status(500).json({ error: "Booking failed: " + error.message });
+      res.status(500).json({ error: error.message || "Booking failed" });
     }
   });
 
@@ -574,14 +1074,21 @@ async function startServer() {
       const { businessId, imageUrl, galleryStyles } = req.body;
       if (!imageUrl || !businessId) return res.status(400).json({ error: "Image and businessId required" });
       
-      const snap = await getDocs(query(collection(db, "businesses"), where("__name__", "==", businessId), limit(1)));
-      if (!snap.empty) {
-        const bizData = snap.docs[0].data();
-        const plan = bizData.plan_id ? bizData.plan_id.toLowerCase() : "free";
-        const hasAI = (plan === "premium"); // AI is Premium only based on requested structure
-        if (!hasAI) {
-           return res.status(403).json({ error: "Funcionalidade de IA disponível apenas no plano Premium." });
-        }
+      const snap = await adminDb.collection("businesses").doc(businessId).get();
+      if (!snap.exists) {
+        return res.status(404).json({ error: "Barbearia não encontrada." });
+      }
+
+      const bizData = snap.data();
+      const plan = (bizData.plan_id || "FREE").toUpperCase();
+      const status = bizData.subscription_status || "active";
+      
+      if (plan !== "PREMIUM" || status !== "active") {
+        return res.status(403).json({ 
+          error: "Acesso bloqueado", 
+          debug: { plan, status, businessId, bizData },
+          reason: status !== "active" ? "Assinatura inativa ou com problemas de pagamento." : "Funcionalidade disponível apenas no plano Premium." 
+        });
       }
 
       const prompt = `Analise a foto do rosto do cliente e sugira qual dos nossos estilos de corte combinaria melhor com ele, baseando-se no formato do rosto e características faciais. Sugira também combinações de serviços complementares (como barba, sobrancelha, ou produtos). Nossos estilos são: ${JSON.stringify(galleryStyles)}.`;
@@ -613,14 +1120,20 @@ async function startServer() {
       const { businessId, imageUrl, styleDescription } = req.body;
       if (!imageUrl || !businessId) return res.status(400).json({ error: "Image and businessId required" });
 
-      const snap = await getDocs(query(collection(db, "businesses"), where("__name__", "==", businessId), limit(1)));
-      if (!snap.empty) {
-        const bizData = snap.docs[0].data();
-        const plan = bizData.plan_id ? bizData.plan_id.toLowerCase() : "free";
-        const hasAI = (plan === "premium"); 
-        if (!hasAI) {
-           return res.status(403).json({ error: "Funcionalidade de IA disponível apenas no plano Premium." });
-        }
+      const snap = await adminDb.collection("businesses").doc(businessId).get();
+      if (!snap.exists) {
+        return res.status(404).json({ error: "Barbearia não encontrada." });
+      }
+
+      const bizData = snap.data();
+      const plan = (bizData.plan_id || "FREE").toUpperCase();
+      const status = bizData.subscription_status || "active";
+      
+      if (plan !== "PREMIUM" || status !== "active") {
+        return res.status(403).json({ 
+          error: "Acesso bloqueado", 
+          reason: status !== "active" ? "Assinatura inativa ou com problemas de pagamento." : "Funcionalidade disponível apenas no plano Premium." 
+        });
       }
 
       const prompt = `Ajuste o cabelo desta pessoa para aplicar este estilo/corte: "${styleDescription}". Faça isso adaptando o corte para as características faciais do cliente para o resultado mais realista possível no rosto do cliente.`;
@@ -671,6 +1184,29 @@ async function startServer() {
       const { priceId, successUrl, cancelUrl, customerEmail, businessId, planId, discountCode } = req.body;
       if (!priceId) return res.status(400).json({ error: "Price ID is required" });
 
+      const priceToPlan: Record<string, string> = {};
+      if (process.env.STRIPE_PRICE_PRO_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_PRO_MONTHLY] = 'PRO';
+      if (process.env.STRIPE_PRICE_BUSINESS_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_BUSINESS_MONTHLY] = 'BUSINESS';
+      if (process.env.STRIPE_PRICE_PREMIUM_MONTHLY) priceToPlan[process.env.STRIPE_PRICE_PREMIUM_MONTHLY] = 'PREMIUM';
+      if (process.env.STRIPE_PRICE_PRO_YEARLY) priceToPlan[process.env.STRIPE_PRICE_PRO_YEARLY] = 'PRO';
+      if (process.env.STRIPE_PRICE_BUSINESS_YEARLY) priceToPlan[process.env.STRIPE_PRICE_BUSINESS_YEARLY] = 'BUSINESS';
+      if (process.env.STRIPE_PRICE_PREMIUM_YEARLY) priceToPlan[process.env.STRIPE_PRICE_PREMIUM_YEARLY] = 'PREMIUM';
+      
+      // Add default mock items to fallback during dev if env isn't defined yet
+      priceToPlan['price_pro_monthly'] = 'PRO';
+      priceToPlan['price_business_monthly'] = 'BUSINESS';
+      priceToPlan['price_premium_monthly'] = 'PREMIUM';
+
+      let validatedPlanId = priceToPlan[priceId];
+
+      if (!validatedPlanId) {
+         if (process.env.NODE_ENV === 'production') {
+            return res.status(400).json({ error: "Invalid Price ID" });
+         } else {
+            validatedPlanId = planId; // Allow arbitrary mapping only in dev
+         }
+      }
+
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
         mode: "subscription",
         payment_method_types: ["card"],
@@ -681,7 +1217,7 @@ async function startServer() {
         client_reference_id: businessId,
         metadata: {
           businessId,
-          planId
+          planId: validatedPlanId
         }
       };
 
@@ -722,45 +1258,11 @@ async function startServer() {
     const REDIRECT_URI = getRedirectUri(req);
     
     if (!INSTAGRAM_CLIENT_ID || !INSTAGRAM_CLIENT_SECRET) {
-      // Simulation Mode: Return a mock auth URL on our own server
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.headers['x-forwarded-host'] || req.get('host');
-      const origin = `${protocol}://${host}`;
-      console.log(`[INSTAGRAM] Secrets missing. Enabling Simulation Mode via ${origin}/auth/instagram/mock`);
-      return res.json({ 
-        url: `${origin}/auth/instagram/mock?redirect_uri=${encodeURIComponent(REDIRECT_URI)}`,
-        is_simulation: true 
-      });
+      return res.status(500).json({ error: "O aplicativo não possui as credenciais do Instagram (Secrets VITE_INSTAGRAM_CLIENT_ID e INSTAGRAM_CLIENT_SECRET)." });
     }
     
     const url = `https://api.instagram.com/oauth/authorize?client_id=${INSTAGRAM_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=user_profile,user_media&response_type=code`;
     res.json({ url });
-  });
-
-  // Simulation Endpoint for Instagram
-  app.get("/auth/instagram/mock", (req, res) => {
-    const { redirect_uri } = req.query;
-    res.send(`
-      <html>
-        <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #000; color: white; margin: 0;">
-          <div style="text-align: center; max-width: 400px; padding: 2rem; border: 1px solid #333; border-radius: 20px; background: #111;">
-            <div style="width: 64px; height: 64px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 18px; margin: 0 auto 1.5rem; display: flex; align-items: center; justify-content: center;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
-            </div>
-            <h2 style="color: white; margin-bottom: 0.5rem;">Modo Simulação Flowza</h2>
-            <p style="color: #888; font-size: 0.9rem; line-height: 1.5; margin-bottom: 2rem;">
-              Você não configurou o Instagram API no menu Secrets. Para fins de demonstração, este simulador irá conectar uma conta fictícia.
-            </p>
-            <a href="${redirect_uri}?code=MOCK_AUTH_CODE" style="display: block; background: #7c3aed; color: white; text-decoration: none; padding: 0.8rem 1.5rem; border-radius: 8px; font-weight: bold; transition: opacity 0.2s;">
-              Autorizar Conta de Teste
-            </a>
-            <p style="margin-top: 1.5rem; font-size: 0.7rem; color: #555;">
-              Para conectar seu Instagram real, volte e configure as variáveis VITE_INSTAGRAM_CLIENT_ID e INSTAGRAM_CLIENT_SECRET.
-            </p>
-          </div>
-        </body>
-      </html>
-    `);
   });
 
   app.get("/auth/instagram/callback", async (req, res) => {
@@ -770,32 +1272,6 @@ async function startServer() {
     const REDIRECT_URI = getRedirectUri(req);
 
     try {
-      if (code === "MOCK_AUTH_CODE") {
-        // Simulation mode response
-        return res.send(`
-          <html>
-            <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #000; color: white;">
-              <div style="text-align: center;">
-                <h2 style="color: #7c3aed;">Simulação Concluída!</h2>
-                <p>Conta de teste conectada com sucesso.</p>
-                <script>
-                  window.opener.postMessage({ 
-                    type: 'INSTAGRAM_AUTH_SUCCESS', 
-                    payload: { 
-                      access_token: "MOCK_TOKEN_" + Math.random().toString(36).substring(7), 
-                      user_id: "mock_user_123",
-                      expires_at: ${Date.now() + (60 * 24 * 60 * 60 * 1000)},
-                      is_simulation: true
-                    } 
-                  }, '*');
-                  setTimeout(() => window.close(), 2000);
-                </script>
-              </div>
-            </body>
-          </html>
-        `);
-      }
-
       let long_lived_token = "";
       let user_id = "";
       let expires_in = 5184000;
@@ -862,37 +1338,6 @@ async function startServer() {
     const { accessToken, businessId } = req.query;
     if (!accessToken || !businessId) return res.status(400).json({ error: "Missing params" });
 
-    if (String(accessToken).startsWith("MOCK_TOKEN")) {
-      // Mock posts for simulation
-      const mockPosts = [
-        {
-          id: "m1",
-          caption: "Resultado incrível de hoje! ✨ #barbearia #estilo",
-          media_type: "IMAGE",
-          media_url: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&q=80",
-          permalink: "https://instagram.com",
-          timestamp: new Date().toISOString()
-        },
-        {
-          id: "m2",
-          caption: "Ambiente renovado para melhor atender você. 💈",
-          media_type: "IMAGE",
-          media_url: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
-          permalink: "https://instagram.com",
-          timestamp: new Date().toISOString()
-        },
-        {
-          id: "m3",
-          caption: "Novos produtos premium chegaram! 🧴",
-          media_type: "IMAGE",
-          media_url: "https://images.unsplash.com/photo-1621605815971-fbc388062093?w=800&q=80",
-          permalink: "https://instagram.com",
-          timestamp: new Date().toISOString()
-        }
-      ];
-      return res.json(mockPosts);
-    }
-
     try {
       const response = await axios.get(`https://graph.instagram.com/me/media`, {
         params: {
@@ -930,7 +1375,7 @@ async function startServer() {
       const url = req.originalUrl;
       
       // Só interceptar se for uma navegação (HTML) e não um asset
-      const isHtmlRequest = req.headers.accept?.includes("text/html") || (!url.includes(".") && !url.startsWith("/@") && !url.startsWith("/node_modules/"));
+      const isHtmlRequest = req.headers.accept?.includes("text/html") || (!url.includes(".") && !url.startsWith("/api/") && !url.startsWith("/@") && !url.startsWith("/node_modules/"));
 
       if (isHtmlRequest) {
         try {

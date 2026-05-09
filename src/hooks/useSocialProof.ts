@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { collection, query, where, orderBy, limit, getDocs, getCountFromServer } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export const useSocialProof = (businessId: string | undefined | null) => {
@@ -27,17 +27,12 @@ export const useSocialProof = (businessId: string | undefined | null) => {
     queryFn: async () => {
       if (!businessId) return null;
       try {
-        const aptQuery = query(collection(db, "appointments"), where("business_id", "==", businessId), where("status", "==", "completed"));
-        const clientQuery = query(collection(db, "clients"), where("business_id", "==", businessId));
-        
-        const [aptCount, clientCount] = await Promise.all([
-          getCountFromServer(aptQuery),
-          getCountFromServer(clientQuery)
-        ]);
+        const bizSnap = await getDoc(doc(db, "businesses", businessId));
+        const bizData = bizSnap.data();
 
         return {
-          totalAppointments: aptCount.data().count,
-          totalClients: clientCount.data().count
+          totalAppointments: bizData?.usage_appointments || 0,
+          totalClients: bizData?.usage_clients || 0
         };
       } catch (err) {
         console.error("Error fetching stats:", err);

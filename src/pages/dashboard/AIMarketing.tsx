@@ -28,14 +28,7 @@ export default function AIMarketing() {
   const [daysBetweenCampaigns, setDaysBetweenCampaigns] = useState(7);
   const [configId, setConfigId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (business?.id) {
-        fetchCampaigns();
-        fetchConfig();
-    }
-  }, [business?.id]);
-
-  const fetchConfig = async () => {
+  const fetchConfig = React.useCallback(async () => {
     if (!business?.id) return;
     try {
         const q = query(collection(db, "marketing_configs"), where("businessId", "==", business.id));
@@ -50,7 +43,7 @@ export default function AIMarketing() {
     } catch (e) {
         console.error("Error fetching marketing config", e);
     }
-  };
+  }, [business?.id]);
 
   const saveConfig = async (autoPilot: boolean, limit: number, days: number) => {
       if (!business?.id) return;
@@ -75,7 +68,7 @@ export default function AIMarketing() {
       await saveConfig(newVal, dailySendLimit, daysBetweenCampaigns);
   };
 
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = React.useCallback(async () => {
     if (!business?.id) return;
     try {
       const q = query(
@@ -97,7 +90,14 @@ export default function AIMarketing() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [business?.id]);
+
+  useEffect(() => {
+    if (business?.id) {
+        fetchCampaigns();
+        fetchConfig();
+    }
+  }, [business?.id, fetchCampaigns, fetchConfig]);
 
   const handleGenerate = async () => {
     if (!business?.id) return;

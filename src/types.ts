@@ -37,7 +37,6 @@ export interface InstagramConfig {
   username?: string;
   expires_at: number; // timestamp
   is_active: boolean;
-  is_simulation?: boolean;
 }
 
 export interface AICampaignResult {

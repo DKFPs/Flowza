@@ -72,7 +72,11 @@ class Logger {
         created_at: serverTimestamp()
       };
 
-      await addDoc(collection(db, "system_events"), payload);
+      await fetch("/api/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
     } catch (e) {
       console.warn("Failed to persist log to Firestore", e);
     }

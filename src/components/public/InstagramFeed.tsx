@@ -81,11 +81,6 @@ const InstagramFeed: React.FC<InstagramFeedProps> = ({ businessId, businessName 
                 <Instagram className="w-8 h-8 opacity-40" />
               </div>
             )}
-            {businessId === 'demo-biz' && (
-              <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded text-[9px] font-black text-white/90 tracking-widest uppercase z-20 pointer-events-none select-none flex items-center gap-1">
-                 <Sparkles className="w-3 h-3 text-purple-400" /> FLOWZA
-              </div>
-            )}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <Instagram className="w-8 h-8 text-white scale-75 group-hover:scale-100 transition-transform" />
             </div>

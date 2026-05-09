@@ -69,13 +69,7 @@ export default function Automations() {
 
   const isEligible = limits?.automation === "full";
 
-  useEffect(() => {
-    if (business?.id) {
-      loadConfigs();
-    }
-  }, [business?.id]);
-
-  const loadConfigs = async () => {
+  const loadConfigs = React.useCallback(async () => {
     if (!business?.id) return;
     try {
       const docSnap = await getDoc(doc(db, "business_automations", business.id));
@@ -95,7 +89,13 @@ export default function Automations() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [business?.id]);
+
+  useEffect(() => {
+    if (business?.id) {
+      loadConfigs();
+    }
+  }, [business?.id, loadConfigs]);
 
   const saveConfigs = async () => {
     if (!business?.id) return;

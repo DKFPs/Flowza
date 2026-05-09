@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { 
   collection, 
   query, 
@@ -73,7 +73,7 @@ const Rewards = () => {
   const [savingCurrency, setSavingCurrency] = useState(false);
   const [currencyName, setCurrencyName] = useState("");
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     try {
       const bizQuery = query(collection(db, "businesses"), where("owner_id", "==", user.uid), limit(1));
@@ -93,9 +93,9 @@ const Rewards = () => {
     } catch (err) {
       console.error("Error fetching rewards:", err);
     }
-  };
+  }, [user]);
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSaveCurrencyLabel = async () => {
     if (!businessId) return;

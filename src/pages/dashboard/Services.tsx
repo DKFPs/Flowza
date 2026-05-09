@@ -51,7 +51,9 @@ const Services = () => {
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form) => {
       if (!business) return;
-      
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Não autorizado");
+
       let imageUrl = data.image_url;
       if (data.file) {
         setUploading(true);
@@ -63,39 +65,32 @@ const Services = () => {
         }
       }
 
-      const batch = writeBatch(db);
-      
-      if (data.id) {
-        const serviceRef = doc(db, "services", data.id);
-        const updateData: any = {
-          name: data.name,
-          duration: parseInt(data.duration_minutes),
-          price: parseFloat(data.price),
-          description: data.description || null,
-        };
-        if (imageUrl) {
-          updateData.image_url = imageUrl;
-        }
-        batch.update(serviceRef, updateData);
-      } else {
-        const newServiceRef = doc(collection(db, "services"));
-        batch.set(newServiceRef, {
-          business_id: business.id,
-          name: data.name,
-          duration: parseInt(data.duration_minutes),
-          price: parseFloat(data.price),
-          description: data.description || null,
-          image_url: imageUrl || null,
-          is_active: true,
-          created_at: serverTimestamp()
-        });
+      const payload = {
+        businessId: business.id,
+        name: data.name,
+        duration: parseInt(data.duration_minutes),
+        price: parseFloat(data.price),
+        description: data.description || null,
+        image_url: imageUrl || null
+      };
 
-        batch.update(doc(db, "businesses", business.id), {
-          usage_services: increment(1)
-        });
+      const url = data.id ? `/api/services/${data.id}` : '/api/services';
+      const method = data.id ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Erro ao salvar serviço");
       }
-
-      await batch.commit();
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["services"] });
@@ -107,26 +102,35 @@ const Services = () => {
     },
     onError: (err) => {
       setUploading(false);
-      handleFirestoreError(err, OperationType.WRITE, "services");
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
     }
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       if (!business) return;
-      const batch = writeBatch(db);
-      batch.delete(doc(db, "services", id));
-      batch.update(doc(db, "businesses", business.id), {
-        usage_services: increment(-1)
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Não autorizado");
+      
+      const res = await fetch(`/api/services/${id}?businessId=${business.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
-      await batch.commit();
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Erro ao remover serviço");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["services"] });
       refreshBusiness();
       toast({ title: "Serviço removido" });
     },
-    onError: (err) => handleFirestoreError(err, OperationType.DELETE, "services")
+    onError: (err) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
   });
 
   const handleOpenNew = () => {

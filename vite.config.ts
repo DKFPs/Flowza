@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
     port: 3000,
-    hmr: process.env.DISABLE_HMR !== "true",
+    hmr: false,
   },
   plugins: [
     react(),
@@ -45,6 +45,20 @@ export default defineConfig(({ mode }) => ({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-popover', '@radix-ui/react-slot', 'lucide-react', 'motion'],
+          charts: ['recharts'],
+          forms: ['react-hook-form', 'zod', '@hookform/resolvers'],
+          date: ['date-fns', 'react-day-picker'],
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore']
+        }
+      }
+    }
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
