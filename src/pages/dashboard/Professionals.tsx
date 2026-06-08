@@ -30,6 +30,8 @@ const Professionals = () => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({ 
     id: "", name: "", specialty: "", description: "", avatar_url: "", file: null as File | null,
     buffer_minutes: 0,

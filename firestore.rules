@@ -68,8 +68,9 @@ service cloud.firestore {
     }
 
     function isBizOwner(bizId) {
-      let biz = get(/databases/$(database)/documents/businesses/$(bizId)).data;
-      return isSignedIn() && biz != null && biz.owner_id == request.auth.uid;
+      return isSignedIn() && bizId != null && bizId != "" && 
+             exists(/databases/$(database)/documents/businesses/$(bizId)) && 
+             get(/databases/$(database)/documents/businesses/$(bizId)).data.owner_id == request.auth.uid;
     }
 
     // Entity Validations
@@ -161,11 +162,9 @@ service cloud.firestore {
 
     // Appointments: Onde o cliente agenda
     match /appointments/{id} {
-      // Cliente acessa individualmente ou via listagem segura (não permitimos listagem pública sem filtro)
+      // Cliente acessa individualmente ou via listagem segura
       allow get: if true; 
-      allow list: if isGlobalAdmin();
-      allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
-      allow list: if request.query.limit <= 50; 
+      allow list: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
       
       allow create: if false; // Only backend admin SDK can create
       allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 

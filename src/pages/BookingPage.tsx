@@ -574,8 +574,23 @@ const BookingPageSkeleton = () => (
 
   const availableSlots = useMemo(() => {
     // Check working days
-    if (selectedProfessional?.working_days && date && !selectedProfessional.working_days.includes(date.getDay())) {
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    
+    if (business?.default_working_hours && date) {
+        const dayName = dayNames[date.getDay()];
+        const dayConfig = business.default_working_hours.find((d: any) => d.day_of_week === dayName);
+        if (dayConfig && !dayConfig.is_active) {
+            return []; // Day off
+        }
+    } else if (selectedProfessional?.working_days && date && !selectedProfessional.working_days.includes(date.getDay())) {
        return [];
+    }
+
+    // Check exceptions (off days)
+    if (selectedProfessional?.exceptions && date) {
+        const dateStr = format(date, "yyyy-MM-dd");
+        const hasOff = selectedProfessional.exceptions.some((ex: any) => ex.date === dateStr && ex.type === "off");
+        if (hasOff) return [];
     }
 
     // Check daily limits
@@ -591,8 +606,16 @@ const BookingPageSkeleton = () => (
     const additionalDuration = Array.isArray(additionalServices) ? additionalServices.reduce((acc, s) => acc + Number(s.duration || s.duration_minutes || 0), 0) : 0;
     const totalDuration = mainDuration + additionalDuration;
 
-    // Use professional's working hours if available, otherwise default to 08:00 - 18:00
-    const workingHours = selectedProfessional?.working_hours || { start: '08:00', end: '18:00' };
+    // Use professional's working hours if available, otherwise fallback to business default or 08:00 - 18:00
+    let workingHours = selectedProfessional?.working_hours || { start: '08:00', end: '18:00' };
+    if (business?.default_working_hours && date) {
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[date.getDay()];
+        const dayConfig = business.default_working_hours.find((d: any) => d.day_of_week === dayName);
+        if (dayConfig && dayConfig.is_active && dayConfig.start_time && dayConfig.end_time) {
+            workingHours = { start: dayConfig.start_time, end: dayConfig.end_time };
+        }
+    }
     
     // Default buffer
     const buffer = selectedProfessional?.buffer_minutes ? Number(selectedProfessional.buffer_minutes) : 0;
@@ -1738,11 +1761,18 @@ const BookingPageSkeleton = () => (
                           }
 
                           const dayOfWeek = d.getDay();
-                          if (selectedProfessional?.working_days && Array.isArray(selectedProfessional.working_days)) {
+                          if (business?.default_working_hours) {
+                             const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                             const dayName = dayNames[dayOfWeek];
+                             const dayConfig = business.default_working_hours.find((c: any) => c.day_of_week === dayName);
+                             if (dayConfig && !dayConfig.is_active) {
+                                 return true;
+                             }
+                          } else if (selectedProfessional?.working_days && Array.isArray(selectedProfessional.working_days)) {
                             return !selectedProfessional.working_days.includes(dayOfWeek);
                           }
-                          // Fallback if not set: Assuming Sunday (0) is disabled
-                          return dayOfWeek === 0;
+                          // Fallback if not set: Assuming Sunday (0) is disabled (unless default_working_hours is defined)
+                          return business?.default_working_hours ? false : dayOfWeek === 0;
                         }}
                       />
                     </div>

@@ -11,7 +11,7 @@ import { PLANS, PlanId } from "@/lib/plans";
 import { useBusiness } from "@/contexts/BusinessContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { DiscountService, UserOffer, Discount } from "@/services/discountService";
 import { StripeService } from "@/services/stripeService";
 import { toast } from "@/hooks/use-toast";
@@ -49,6 +49,23 @@ export default function SubscriptionPlans() {
   const [couponInput, setCouponInput] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [enableAnnualPlan, setEnableAnnualPlan] = useState<boolean>(true);
+
+  useEffect(() => {
+    const fetchGlobalSettings = async () => {
+      try {
+        const docRef = await getDoc(doc(db, "platform_settings", "global"));
+        if (docRef.exists()) {
+           if (docRef.data().enable_annual_plan !== undefined) {
+             setEnableAnnualPlan(docRef.data().enable_annual_plan);
+           }
+        }
+      } catch (err) {
+        console.error("Failed to load global platform settings", err);
+      }
+    };
+    fetchGlobalSettings();
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -202,7 +219,7 @@ export default function SubscriptionPlans() {
       )}
 
       {/* Billing Toggle */}
-      {Object.values(PLANS).some(plan => plan.stripePriceIdAnnually) && (
+      {enableAnnualPlan && Object.values(PLANS).some(plan => plan.stripePriceIdAnnually) && (
         <div className="flex items-center justify-center gap-4">
           <Label className={cn(billingPeriod === "monthly" ? "text-foreground font-bold" : "text-muted-foreground")}>Mensal</Label>
           <Switch 

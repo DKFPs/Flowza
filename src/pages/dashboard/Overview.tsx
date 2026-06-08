@@ -120,11 +120,11 @@ const Overview = () => {
 
     const loadRealData = async () => {
       try {
-        const apptsQuery = query(collection(db, "appointments"), where("business_id", "==", business.id));
+        const apptsQuery = query(collection(db, "appointments"), where("business_id", "==", business.id), limit(100));
         const apptsSnap = await getDocs(apptsQuery);
         const appointments = apptsSnap.docs.map(d => d.data());
 
-        const srvQuery = query(collection(db, "services"), where("business_id", "==", business.id));
+        const srvQuery = query(collection(db, "services"), where("business_id", "==", business.id), limit(50));
         const srvSnap = await getDocs(srvQuery);
         const services = srvSnap.docs.map(d => ({id: d.id, ...d.data()}));
 

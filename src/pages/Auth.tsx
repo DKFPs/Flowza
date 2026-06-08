@@ -139,9 +139,11 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
 
+    const trimmedEmail = email.trim();
+
     try {
       if (view === "signup") {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
         const newUser = userCredential.user;
         
         // Update profile in Auth
@@ -156,34 +158,41 @@ const Auth = () => {
 
         toast({ title: "Cadastro realizado!", description: "Bem-vindo ao Flowza!" });
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, trimmedEmail, password);
         toast({ title: "Bem-vindo de volta!", description: "Login realizado com sucesso." });
       }
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string };
       console.error("Auth error:", error);
-      let message = "Ocorreu um erro inesperado.";
       
       const errorCode = error.code || "";
       const errorMessage = error.message || "";
+      let message = "Ocorreu um erro inesperado.";
       
-      if (errorCode.toLowerCase().includes("email-already-in-use") || errorMessage.toLowerCase().includes("email-already-in-use")) {
+      const fullError = (errorCode + " " + errorMessage).toLowerCase();
+      
+      if (fullError.includes("email-already-in-use")) {
         message = "Este e-mail já está cadastrado. Se você já tem uma conta, clique em 'Entrar' logo abaixo para fazer login.";
-      } else if (errorCode.toLowerCase().includes("invalid-credential") || 
-                 errorMessage.toLowerCase().includes("invalid-credential") || 
-                 errorCode.toLowerCase().includes("wrong-password") || 
-                 errorMessage.toLowerCase().includes("wrong-password") ||
-                 errorCode.toLowerCase().includes("user-not-found") || 
-                 errorMessage.toLowerCase().includes("user-not-found")) {
-        message = view === "signup" 
-          ? "Já existe uma conta com este e-mail ou os dados são inválidos. Tente fazer login ou verifique os campos."
-          : "E-mail ou senha incorretos. (Se você limpou seu projeto ou ele foi migrado recentemente, sua conta antiga pode não existir mais, tente 'Criar conta' novamente).";
-      } else if (errorCode.toLowerCase().includes("weak-password") || errorMessage.toLowerCase().includes("weak-password")) {
+      } else if (fullError.includes("invalid-credential") || 
+                 fullError.includes("wrong-password") || 
+                 fullError.includes("user-not-found") ||
+                 fullError.includes("user-not-existing") ||
+                 fullError.includes("invalid-login-credentials")) {
+        
+        if (view === "signup") {
+          message = "Não foi possível criar a conta. Verifique se os dados estão corretos ou se você já possui uma conta com este e-mail.";
+        } else {
+          message = "E-mail ou senha incorretos. Caso tenha esquecido sua senha, use a opção 'Esqueci minha senha'. Se você limpou seu projeto recentemente, tente 'Cadastrar' novamente.";
+        }
+      } else if (fullError.includes("weak-password")) {
         message = "A senha é muito fraca. Ela deve conter pelo menos 6 caracteres.";
-      } else if (errorCode.toLowerCase().includes("too-many-requests") || errorMessage.toLowerCase().includes("too-many-requests")) {
+      } else if (fullError.includes("too-many-requests")) {
         message = "Muitas tentativas sem sucesso. Sua conta foi temporariamente bloqueada. Tente novamente mais tarde ou redefina sua senha.";
-      } else if (errorCode.toLowerCase().includes("invalid-email") || errorMessage.toLowerCase().includes("invalid-email")) {
+      } else if (fullError.includes("invalid-email")) {
         message = "O formato do e-mail é inválido. Por favor, verifique.";
+      } else if (fullError.includes("popup-closed-by-user")) {
+        setLoading(false);
+        return;
       } else {
         message = "Erro na autenticação: " + (errorCode || errorMessage || "Verifique sua conexão e tente novamente.");
       }

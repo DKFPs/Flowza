@@ -62,6 +62,7 @@ const MyAppointments = () => {
   const [newTime, setNewTime] = useState<string | null>(null);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedBizData, setSelectedBizData] = useState<any>(null);
 
   const fetchAppointments = useCallback(async () => {
     if (!user) return;
@@ -138,11 +139,13 @@ const MyAppointments = () => {
     setIsCancelModalOpen(true);
   };
 
-  const handleRescheduleClick = (apt: HydratedAppointment) => {
+  const handleRescheduleClick = async (apt: HydratedAppointment) => {
     setSelectedApt(apt);
     setNewDate(new Date(apt.appointment_date + "T00:00:00"));
     setNewTime(apt.start_time.slice(0, 5));
     setIsRescheduleModalOpen(true);
+    const biz = await getBusinessSettings(apt.business_id);
+    setSelectedBizData(biz);
   };
 
   const notifyBusiness = async (apt: HydratedAppointment, action: "cancel" | "reschedule", details?: string) => {
@@ -215,10 +218,34 @@ const MyAppointments = () => {
       const snap = await getDocs(q);
       const bookedStartTimes = snap.docs.map((d) => d.data().start_time.slice(0, 5));
       
-      const ALL_SLOTS = [
-        "08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30",
-        "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00",
-      ];
+      let start = "08:00";
+      let end = "18:00";
+      if (selectedBizData && selectedBizData.default_working_hours) {
+         const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+         const dayConfig = selectedBizData.default_working_hours.find((c: any) => c.day_of_week === dayNames[date.getDay()]);
+         if (dayConfig && dayConfig.is_active) {
+            start = dayConfig.start_time || start;
+            end = dayConfig.end_time || end;
+         }
+      }
+
+      const generateTimeSlots = (startStr: string, endStr: string) => {
+         const slots = [];
+         const [startH, startM] = startStr.split(':').map(Number);
+         const [endH, endM] = endStr.split(':').map(Number);
+         let currentMins = startH * 60 + startM;
+         const endMins = endH * 60 + endM;
+         
+         while (currentMins <= endMins) {
+           const h = Math.floor(currentMins / 60).toString().padStart(2, '0');
+           const m = (currentMins % 60).toString().padStart(2, '0');
+           slots.push(`${h}:${m}`);
+           currentMins += 30; // 30 min intervals
+         }
+         return slots;
+      };
+
+      const ALL_SLOTS = generateTimeSlots(start, end);
       
       setAvailableSlots(ALL_SLOTS.filter(s => !bookedStartTimes.includes(s) || s === selectedApt.start_time.slice(0, 5)));
     } catch (e) {
@@ -441,7 +468,18 @@ const MyAppointments = () => {
                   disabled={(d) => {
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
-                    return d < today || d.getDay() === 0;
+                    if (d < today) return true;
+                    const dayOfWeek = d.getDay();
+                    if (selectedBizData && selectedBizData.default_working_hours) {
+                       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                       const dayName = dayNames[dayOfWeek];
+                       const dayConfig = selectedBizData.default_working_hours.find((c: any) => c.day_of_week === dayName);
+                       if (dayConfig && !dayConfig.is_active) {
+                           return true;
+                       }
+                       return false;
+                    }
+                    return dayOfWeek === 0;
                   }}
                 />
               </div>

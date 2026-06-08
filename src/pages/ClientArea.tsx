@@ -61,6 +61,7 @@ const ClientArea = () => {
   const [searched, setSearched] = useState(false);
   const [clientData, setClientData] = useState<Client | null>(null);
   const [businessId, setBusinessId] = useState<string | null>(null);
+  const [businessData, setBusinessData] = useState<any>(null);
   const [loyaltyCurrency, setLoyaltyCurrency] = useState("RESGATE");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loyaltyPoints, setLoyaltyPoints] = useState<{ balance: number; total_earned: number } | null>(null);
@@ -99,6 +100,7 @@ const ClientArea = () => {
       const bizId = bizSnap.docs[0].id;
       const bizData = bizSnap.docs[0].data();
       setBusinessId(bizId);
+      setBusinessData(bizData);
       setLoyaltyCurrency(bizData.loyalty_currency_name || "RESGATE");
 
       // 2. Find client by phone in this business
@@ -690,7 +692,21 @@ const ClientArea = () => {
             mode="single"
             selected={rescheduleDate}
             onSelect={(d) => { setRescheduleDate(d); setRescheduleTime(null); }}
-            disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0)) || d.getDay() === 0}
+            disabled={(d) => {
+              const today = new Date(new Date().setHours(0, 0, 0, 0));
+              if (d < today) return true;
+              const dayOfWeek = d.getDay();
+              if (businessData && businessData.default_working_hours) {
+                const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                const dayName = dayNames[dayOfWeek];
+                const dayConfig = businessData.default_working_hours.find((c: any) => c.day_of_week === dayName);
+                if (dayConfig && !dayConfig.is_active) {
+                    return true;
+                }
+                return false;
+              }
+              return dayOfWeek === 0; // Fallback to Sunday off
+            }}
             locale={ptBR}
             className="pointer-events-auto mx-auto"
           />
@@ -700,19 +716,46 @@ const ClientArea = () => {
                 Horários — {format(rescheduleDate, "dd/MM", { locale: ptBR })}
               </p>
               <div className="grid grid-cols-4 gap-1.5 max-h-32 overflow-auto">
-                {TIME_SLOTS.map((slot) => (
-                  <button
-                    key={slot}
-                    onClick={() => setRescheduleTime(slot)}
-                    className={`py-2 text-xs font-medium rounded-md border transition-all ${
-                      rescheduleTime === slot
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "border-border text-foreground hover:border-primary"
-                    }`}
-                  >
-                    {slot}
-                  </button>
-                ))}
+                {(() => {
+                   let start = "08:00";
+                   let end = "18:00";
+                   if (businessData && businessData.default_working_hours) {
+                      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                      const dayConfig = businessData.default_working_hours.find((c: any) => c.day_of_week === dayNames[rescheduleDate.getDay()]);
+                      if (dayConfig && dayConfig.is_active) {
+                         start = dayConfig.start_time || start;
+                         end = dayConfig.end_time || end;
+                      }
+                   }
+                   const generateTimeSlots = (startStr: string, endStr: string) => {
+                      const slots = [];
+                      const [startH, startM] = startStr.split(':').map(Number);
+                      const [endH, endM] = endStr.split(':').map(Number);
+                      let currentMins = startH * 60 + startM;
+                      const endMins = endH * 60 + endM;
+                      while (currentMins <= endMins) {
+                        const h = Math.floor(currentMins / 60).toString().padStart(2, '0');
+                        const m = (currentMins % 60).toString().padStart(2, '0');
+                        slots.push(`${h}:${m}`);
+                        currentMins += 30; // 30 min intervals
+                      }
+                      return slots;
+                   };
+                   const slots = generateTimeSlots(start, end);
+                   return slots.map((slot) => (
+                     <button
+                       key={slot}
+                       onClick={() => setRescheduleTime(slot)}
+                       className={`py-2 text-xs font-medium rounded-md border transition-all ${
+                         rescheduleTime === slot
+                           ? "bg-primary text-primary-foreground border-primary"
+                           : "border-border text-foreground hover:border-primary"
+                       }`}
+                     >
+                       {slot}
+                     </button>
+                   ));
+                })()}
               </div>
             </div>
           )}
