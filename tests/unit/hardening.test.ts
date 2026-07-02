@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { normalizePhone, normalizeName, isValidPhone } from '@/lib/normalization';
+// Test suite globals provided by Jest
+import { normalizePhone, normalizeName, isValidPhone } from '../../src/lib/normalization';
 
 describe('Normalização de Dados (Módulo 2)', () => {
   it('deve normalizar telefones removendo caracteres especiais', () => {

@@ -274,23 +274,33 @@ const ClientArea = () => {
     setSubmittingReview(true);
 
     try {
-      await addDoc(collection(db, "reviews"), {
-        business_id: businessId,
-        client_id: clientData.id,
-        appointment_id: aptId,
-        rating: reviewRating,
-        comment: reviewComment.trim() || null,
-        created_at: serverTimestamp()
-      }).catch(e => handleFirestoreError(e, OperationType.CREATE, "reviews"));
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          businessId,
+          clientId: clientData.id,
+          appointmentId: aptId,
+          rating: reviewRating,
+          comment: reviewComment.trim() || null
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Erro ao salvar avaliação");
+      }
 
       toast({ title: "Avaliação enviada com sucesso! Obrigado!" });
       setReviewedIds((prev) => [...prev, aptId]);
       setReviewingApt(null);
       setReviewRating(0);
       setReviewComment("");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Review error:", err);
-      toast({ title: "Erro ao enviar avaliação", variant: "destructive" });
+      toast({ title: err.message || "Erro ao enviar avaliação", variant: "destructive" });
     }
 
     setSubmittingReview(false);

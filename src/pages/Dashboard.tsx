@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -233,7 +233,13 @@ const Dashboard = () => {
           </h2>
         </header>
         <main className="flex-1 p-4 md:p-6 overflow-auto pb-24 lg:pb-6">
-          <Outlet />
+          <Suspense fallback={
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
         </main>
         <BottomNav items={bottomNavItems} />
         <HelpGuide />

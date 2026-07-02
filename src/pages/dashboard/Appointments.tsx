@@ -86,8 +86,6 @@ const Appointments = () => {
         q = query(
           collection(db, "appointments"),
           where("business_id", "==", business.id),
-          orderBy("appointment_date", "desc"),
-          orderBy("start_time", "desc"),
           limit(100)
         );
       } else {
@@ -95,13 +93,22 @@ const Appointments = () => {
           collection(db, "appointments"),
           where("business_id", "==", business.id),
           where("appointment_date", "==", format(date, "yyyy-MM-dd")),
-          orderBy("start_time", "asc"),
           limit(50)
         );
       }
       
       const snap = await getDocs(q);
       const appts = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+      if (showAllDates) {
+        appts.sort((a, b) => {
+          const dateComp = (b.appointment_date || "").localeCompare(a.appointment_date || "");
+          if (dateComp !== 0) return dateComp;
+          return (b.start_time || "").localeCompare(a.start_time || "");
+        });
+      } else {
+        appts.sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
+      }
 
       const clientIds = [...new Set(appts.map(a => a.client_id).filter(Boolean))];
       const profIds = [...new Set(appts.map(a => a.professional_id).filter(Boolean))];

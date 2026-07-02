@@ -75,12 +75,13 @@ const Units = () => {
   const fetchData = useCallback(async () => {
     if (!user || !business) return;
     try {
-      const q = query(collection(db, "units"), where("business_id", "==", business.id), orderBy("name"));
+      const q = query(collection(db, "units"), where("business_id", "==", business.id));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Unit));
-      setUnits(data);
-      if (data.length > 0 && data[0].latitude && data[0].longitude) {
-        setMapCenter([data[0].latitude, data[0].longitude]);
+      const sortedData = data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setUnits(sortedData);
+      if (sortedData.length > 0 && sortedData[0].latitude && sortedData[0].longitude) {
+        setMapCenter([sortedData[0].latitude, sortedData[0].longitude]);
       }
     } catch (error) {
       console.error("Error fetching units:", error);

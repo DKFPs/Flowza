@@ -1,8 +1,19 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import { useSEO } from '@/hooks/useSEO';
 
 const PublicServicePage: React.FC = () => {
   const { businessSlug, serviceSlug } = useParams();
+
+  // Dynamic SEO meta tags based on business and service
+  useSEO({
+    title: `${serviceSlug ? serviceSlug.charAt(0).toUpperCase() + serviceSlug.slice(1) : 'Serviço'} - ${businessSlug ? businessSlug.charAt(0).toUpperCase() + businessSlug.slice(1) : 'Flowza'}`,
+    description: `Agende o serviço ${serviceSlug} no ${businessSlug}. Veja a duração do serviço, valores e os horários livres para fazer seu agendamento online imediato 24h.`,
+    keywords: `${serviceSlug}, agendar ${serviceSlug} ${businessSlug}, agendamento online`,
+    ogTitle: `${serviceSlug} no estabelecimento ${businessSlug}`,
+    ogDescription: `Reserve o seu horário online com facilidade para o serviço ${serviceSlug} em ${businessSlug}.`,
+    ogImage: `https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800`
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">

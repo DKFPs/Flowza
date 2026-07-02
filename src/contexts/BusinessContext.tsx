@@ -75,8 +75,11 @@ export const BusinessProvider = ({ children }: { children: ReactNode }) => {
 
 
   let planIdRaw = business?.plan_id?.toLowerCase() as PlanId;
+  const subStatus = business?.subscription_status;
   
-  if (business?.subscription_status === 'trialing' && business?.trial_expires_at) {
+  if (subStatus && subStatus !== 'active' && subStatus !== 'trialing') {
+    planIdRaw = PlanId.FREE;
+  } else if (business?.subscription_status === 'trialing' && business?.trial_expires_at) {
     const getExpiryDate = () => {
       if (typeof business.trial_expires_at.toDate === 'function') {
         return business.trial_expires_at.toDate();

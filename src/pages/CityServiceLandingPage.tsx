@@ -1,8 +1,19 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import { useSEO } from '@/hooks/useSEO';
 
 const CityServiceLandingPage: React.FC = () => {
   const { city, service } = useParams();
+
+  // Dynamic SEO meta tags based on city and service
+  useSEO({
+    title: `${service} em ${city} | Agendamento Online de Qualidade`,
+    description: `Descubra e agende os melhores serviços de ${service} em ${city}. Agendamento online prático, avaliações reais e atendimento de excelência com o Flowza.`,
+    keywords: `${service} em ${city}, agendar ${service} ${city}, melhor ${service} de ${city}, agendamento online`,
+    ogTitle: `Os Melhores de ${service} em ${city} | Flowza`,
+    ogDescription: `Compare avaliações, veja preços e agende online o seu atendimento de ${service} na cidade de ${city}.`,
+    ogImage: `https://picsum.photos/seed/${city}-${service}/1200/630`,
+  });
 
   // No mundo real, aqui buscaríamos negócios que oferecem esse serviço nessa cidade
   const mockNearBusinesses = [

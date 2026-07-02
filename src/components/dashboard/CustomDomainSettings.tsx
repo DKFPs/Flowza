@@ -91,23 +91,43 @@ export function CustomDomainSettings({ business, onUpdate }: CustomDomainSetting
       
       if (!domain || !expectedTxt) return;
 
-      // Use Google DoH API to check TXT records
-      const rootDomain = domain.split('.').slice(-2).join('.');
+      // Extract root domain correctly supporting SLDs (e.g., .com.br, .net.br, .co.uk)
+      const getRootDomain = (dom: string): string => {
+        const parts = dom.split('.');
+        if (parts.length <= 2) return dom;
+        const slds = ['com', 'net', 'org', 'gov', 'co', 'edu', 'art', 'adm', 'arq', 'bio', 'cim', 'cng', 'cnt', 'ecn', 'eng', 'esp', 'etc', 'eti', 'far', 'fmd', 'g12', 'ggf', 'imb', 'ind', 'inf', 'jor', 'lel', 'mat', 'med', 'mus', 'odo', 'psq', 'psi', 'qsl', 'rec', 'slg', 'srv', 'tmp', 'trd', 'tur', 'vet', 'zlg'];
+        const secondLast = parts[parts.length - 2];
+        if (slds.includes(secondLast) && parts.length >= 3) {
+          return parts.slice(-3).join('.');
+        }
+        return parts.slice(-2).join('.');
+      };
+
+      const rootDomain = getRootDomain(domain);
       
-      const response = await fetch(`https://dns.google/resolve?name=${rootDomain}&type=TXT`);
-      if (!response.ok) throw new Error("Erro ao consultar DNS");
-      
-      const json = await response.json();
-      
+      // Query Google DoH API for both the root domain and the exact domain (subdomain) to ensure maximum compatibility
       let verified = false;
+      const domainsToTry = Array.from(new Set([rootDomain, domain]));
       
-      if (json.Answer) {
-        // Find if any TXT record includes our expectedTxt
-        verified = json.Answer.some((ans: { data: string }) => {
-          const value = ans.data;
-          // Google DoH returns TXT records enclosed in quotes
-          return value.includes(expectedTxt) || value.includes(`"${expectedTxt}"`);
-        });
+      for (const d of domainsToTry) {
+        try {
+          const response = await fetch(`https://dns.google/resolve?name=${d}&type=TXT`);
+          if (response.ok) {
+            const json = await response.json();
+            if (json.Answer) {
+              const matched = json.Answer.some((ans: { data: string }) => {
+                const value = ans.data;
+                return value.includes(expectedTxt) || value.includes(`"${expectedTxt}"`);
+              });
+              if (matched) {
+                verified = true;
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`Error verifying DNS TXT for ${d}:`, e);
+        }
       }
 
       // FALLBACK TO SIMULATION FOR DEVELOPMENT/PREVIEW environment

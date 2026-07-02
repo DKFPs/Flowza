@@ -1,5 +1,5 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "flowza",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +14,8 @@
     "test:integration": "jest --config jest.config.ts --testMatch='**/tests/integration/**/*.test.ts'",
     "test:unit": "jest --config jest.config.ts --testMatch='**/tests/unit/**/*.test.ts'",
     "test:e2e": "playwright test",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e"
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "validate:prod": "tsx scripts/validate_prod.ts"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",

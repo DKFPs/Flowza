@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+// Test suite globals provided by Jest
 
 // Simulating the transactional booking function from BookingPage
 // For a deterministic ID like what we did in the code

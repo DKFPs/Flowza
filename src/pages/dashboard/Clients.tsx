@@ -54,11 +54,11 @@ const Clients = () => {
       if (!business?.id) return [];
       const q = query(
         collection(db, "clients"), 
-        where("business_id", "==", business.id), 
-        orderBy("name")
+        where("business_id", "==", business.id)
       );
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ id: d.id, ...d.data() } as Client));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Client));
+      return list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     },
     enabled: !!business?.id,
   });

@@ -29,19 +29,26 @@ const Reviews = () => {
       const bizId = bizSnap.docs[0].id;
 
       const [reviewsSnap, clientsSnap] = await Promise.all([
-        getDocs(query(collection(db, "reviews"), where("business_id", "==", bizId), orderBy("created_at", "desc"))),
+        getDocs(query(collection(db, "reviews"), where("business_id", "==", bizId))),
         getDocs(query(collection(db, "clients"), where("business_id", "==", bizId))),
       ]);
 
       const clientsMap = new Map(clientsSnap.docs.map(d => [d.id, d.data() as Client]));
       
-      const list = reviewsSnap.docs.map(d => {
+      let list = reviewsSnap.docs.map(d => {
         const data = d.data();
         return {
           id: d.id,
           ...data,
           clients: { name: clientsMap.get(data.client_id)?.name || "Anônimo" }
         } as Review;
+      });
+
+      // Sort reviews descending by created_at in-memory
+      list = list.sort((a, b) => {
+        const dateA = a.created_at?.seconds || 0;
+        const dateB = b.created_at?.seconds || 0;
+        return dateB - dateA;
       });
 
       setReviews(list);

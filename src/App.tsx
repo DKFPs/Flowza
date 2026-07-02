@@ -64,13 +64,12 @@ const GlobalObservability = lazy(() => import("@/pages/global_admin/GlobalObserv
 const GlobalAutoHealing = lazy(() => import("@/pages/global_admin/GlobalAutoHealing"));
 const GlobalLearning = lazy(() => import("@/pages/global_admin/GlobalLearning"));
 const GlobalAdministrators = lazy(() => import("@/pages/global_admin/GlobalAdministrators"));
-
-import GlobalAuditLogs from "@/pages/global_admin/GlobalAuditLogs";
-import GlobalDatabase from "@/pages/global_admin/GlobalDatabase";
-import GlobalTenants from "@/pages/global_admin/GlobalTenants";
-import GlobalCoupons from "@/pages/global_admin/GlobalCoupons";
-import GlobalSettings from "@/pages/global_admin/GlobalSettings";
-import GlobalFeatures from "@/pages/global_admin/GlobalFeatures";
+const GlobalAuditLogs = lazy(() => import("@/pages/global_admin/GlobalAuditLogs"));
+const GlobalDatabase = lazy(() => import("@/pages/global_admin/GlobalDatabase"));
+const GlobalTenants = lazy(() => import("@/pages/global_admin/GlobalTenants"));
+const GlobalCoupons = lazy(() => import("@/pages/global_admin/GlobalCoupons"));
+const GlobalSettings = lazy(() => import("@/pages/global_admin/GlobalSettings"));
+const GlobalFeatures = lazy(() => import("@/pages/global_admin/GlobalFeatures"));
 
 const queryClient = new QueryClient({
   defaultOptions: {

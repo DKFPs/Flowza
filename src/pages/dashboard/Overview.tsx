@@ -114,6 +114,8 @@ const Overview = () => {
   const [estimatedRevenue, setEstimatedRevenue] = useState(0);
   const [nextAppointments, setNextAppointments] = useState<{ time: string; name: string; service: string; status: string }[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [hasServices, setHasServices] = useState(true);
+  const [hasProfessionals, setHasProfessionals] = useState(true);
 
   useEffect(() => {
     if (!user || !business) return;
@@ -127,6 +129,13 @@ const Overview = () => {
         const srvQuery = query(collection(db, "services"), where("business_id", "==", business.id), limit(50));
         const srvSnap = await getDocs(srvQuery);
         const services = srvSnap.docs.map(d => ({id: d.id, ...d.data()}));
+
+        const profQuery = query(collection(db, "professionals"), where("business_id", "==", business.id), limit(50));
+        const profSnap = await getDocs(profQuery);
+        const professionals = profSnap.docs.map(d => d.data());
+
+        setHasServices(services.length > 0);
+        setHasProfessionals(professionals.length > 0);
 
         // Next Appointments
         const now = new Date();
@@ -312,6 +321,42 @@ const Overview = () => {
             {/* Conversion Trigger for 1st Booking */}
             {usage.appointments === 1 && plan.id === PlanId.FREE && (
               <FirstBookingTrigger />
+            )}
+
+            {(!hasServices || !hasProfessionals) && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-500/10 border-2 border-amber-500/30 text-amber-950 dark:text-amber-200 p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-500/20 text-amber-600 rounded-2xl shrink-0">
+                    <AlertTriangle className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div className="space-y-1 text-left">
+                    <h4 className="font-bold text-sm text-amber-900 dark:text-amber-100">Configuração Pendente</h4>
+                    <p className="text-xs text-amber-800/90 dark:text-amber-300/90 max-w-md font-medium">
+                      Para começar a receber agendamentos, adicione pelo menos um serviço e um profissional!
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0 w-full md:w-auto">
+                  {!hasServices && (
+                    <Link to="/dashboard/services" className="w-full md:w-auto">
+                      <Button variant="outline" size="sm" className="w-full bg-white border-amber-500/30 hover:bg-amber-50 text-amber-800 text-xs rounded-xl h-10 px-4 font-bold">
+                        Configurar Serviços
+                      </Button>
+                    </Link>
+                  )}
+                  {!hasProfessionals && (
+                    <Link to="/dashboard/professionals" className="w-full md:w-auto">
+                      <Button variant="outline" size="sm" className="w-full bg-white border-amber-500/30 hover:bg-amber-50 text-amber-800 text-xs rounded-xl h-10 px-4 font-bold">
+                        Configurar Profissionais
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </motion.div>
             )}
 
             {/* Step 6: Activation Checklist */}

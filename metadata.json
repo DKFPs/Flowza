@@ -2,5 +2,5 @@
   "name": "Flowza",
   "description": "Automatize seu negócio e cresça no piloto automático. Agendamento inteligente, automações e fidelização — tudo em um só lugar.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

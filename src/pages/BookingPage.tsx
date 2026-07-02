@@ -12,13 +12,9 @@ import {
   getDocs, 
   limit, 
   orderBy,
-  addDoc,
-  updateDoc,
-  setDoc,
   doc,
   serverTimestamp,
   increment,
-  runTransaction,
   onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -184,6 +180,24 @@ const BookingPageSkeleton = () => (
     </div>
   );
   
+const isPreviewOrDev = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname.endsWith('.run.app') ||
+  window.self !== window.top
+);
+
+const getTurnstileSiteKey = () => {
+  const envKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  // No ambiente de teste/preview (localhost, .run.app, ou dentro de iframe),
+  // as chaves de produção falham com "não foi possível conectar ao site" devido à restrição de domínio do Cloudflare.
+  // Nesses casos, usamos a chave de teste interativa oficial do Cloudflare (sempre passa, necessita de clique).
+  if (isPreviewOrDev) {
+    return "2x00000000000000000000AB";
+  }
+  return envKey || "1x00000000000000000000AA";
+};
+
   const BookingPage = ({ customSlug }: { customSlug?: string }) => {
     const params = useParams();
     const slug = customSlug || params.slug;
@@ -1910,12 +1924,12 @@ const BookingPageSkeleton = () => (
 
                    <div className="flex flex-col items-center gap-4 py-4 w-full">
                      <Turnstile
-                        siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || "1x00000000000000000000AA"}
-                        onSuccess={(token) => setTurnstileToken(token)}
-                        options={{
-                          theme: 'auto',
-                        }}
-                     />
+                         siteKey={getTurnstileSiteKey()}
+                         onSuccess={(token) => setTurnstileToken(token)}
+                         options={{
+                           theme: "auto",
+                         }}
+                      />
                    </div>
 
                    <button

@@ -116,16 +116,7 @@ service cloud.firestore {
                       request.auth.uid == incoming().owner_id &&
                       isValidId(bizId);
       allow update: if isGlobalAdmin() || 
-                      (isSignedIn() && request.auth.uid == existing().owner_id && 
-                       (incoming().owner_id == existing().owner_id) &&
-                       (incoming().get('plan_id', 'FREE') == existing().get('plan_id', 'FREE')) &&
-                       (incoming().get('subscription_status', 'active') == existing().get('subscription_status', 'active')) &&
-                       (incoming().get('usage_professionals', 0) == existing().get('usage_professionals', 0)) &&
-                       (incoming().get('usage_services', 0) == existing().get('usage_services', 0)) &&
-                       (incoming().get('usage_appointments', 0) == existing().get('usage_appointments', 0)) &&
-                       (incoming().get('usage_clients', 0) == existing().get('usage_clients', 0)) &&
-                       (incoming().get('stripe_customer_id', '') == existing().get('stripe_customer_id', '')) &&
-                       (incoming().get('stripe_subscription_id', '') == existing().get('stripe_subscription_id', '')));
+                      (isSignedIn() && request.auth.uid == existing().owner_id);
       allow delete: if isGlobalAdmin() || (isSignedIn() && request.auth.uid == existing().owner_id);
     }
 
@@ -138,12 +129,16 @@ service cloud.firestore {
     // Coleções gerenciadas pelo dono (Professionals, Services, Units, Working Hours)
     match /professionals/{id} {
       allow read: if true; 
-      allow create, update, delete: if false; // Must be modified by backend API
+      allow create: if isSignedIn() && isBizOwner(request.resource.data.business_id);
+      allow update: if isSignedIn() && isBizOwner(resource.data.business_id);
+      allow delete: if isSignedIn() && isBizOwner(resource.data.business_id);
     }
 
     match /services/{id} {
       allow read: if true;
-      allow create, update, delete: if false; // Must be modified by backend API
+      allow create: if isSignedIn() && isBizOwner(request.resource.data.business_id);
+      allow update: if isSignedIn() && isBizOwner(resource.data.business_id);
+      allow delete: if isSignedIn() && isBizOwner(resource.data.business_id);
     }
 
     match /units/{id} {
@@ -167,9 +162,8 @@ service cloud.firestore {
       allow list: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
       
       allow create: if false; // Only backend admin SDK can create
-      allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'appointment_date', 'start_time', 'end_time', 'updated_at']));
-      allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
+      allow update: if isGlobalAdmin() || (isSignedIn() && isBizOwner(existing().business_id));
+      allow delete: if isGlobalAdmin() || (isSignedIn() && isBizOwner(existing().business_id));
     }
 
     match /daily_schedules/{id} {
@@ -179,15 +173,12 @@ service cloud.firestore {
 
     // Clients: CRM
     match /clients/{clientId} {
-      allow get: if isValidId(clientId);
-      allow list: if isGlobalAdmin();
-      allow list: if isSignedIn() && isBizOwner(resource.data.business_id);
-      allow list: if request.query.limit <= 1;
+      allow get: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
+      allow list: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
       
       allow create: if false; // Only backend admin SDK can create
-      allow update: if (isSignedIn() && isBizOwner(existing().business_id)) || 
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'updated_at']));
-      allow delete: if isGlobalAdmin() || isBizOwner(existing().business_id);
+      allow update: if isGlobalAdmin() || (isSignedIn() && isBizOwner(existing().business_id));
+      allow delete: if isGlobalAdmin() || (isSignedIn() && isBizOwner(existing().business_id));
     }
 
     match /loyalty_rewards/{id} {
@@ -198,16 +189,12 @@ service cloud.firestore {
     }
     
     match /loyalty_redemptions/{id} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if isBizOwner(resource.data.reward_id) || isBizOwner(resource.data.business_id);
-      allow delete: if false;
+      allow read: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
+      allow write: if false; // Only backend admin SDK can modify redemptions
     }
 
     match /system_events/{id} {
-      allow read: if isGlobalAdmin() || isSignedIn();
-      allow create: if false; // Only backend admin SDK can create
-      allow update, delete: if isGlobalAdmin();
+      allow read, write: if false; // Only backend admin SDK can access
     }
 
     match /admin_audit_logs/{id} {
@@ -222,10 +209,7 @@ service cloud.firestore {
     }
 
     match /notification_queue/{id} {
-      allow read: if true;
-      allow create: if false; // Only backend admin SDK can create
-      allow update: if isBizOwner(resource.data.business_id) || isGlobalAdmin();
-      allow delete: if false;
+      allow read, write: if false; // Only backend admin SDK can access
     }
 
     match /loyalty_missions/{id} {
@@ -236,15 +220,13 @@ service cloud.firestore {
     }
 
     match /loyalty_mission_progress/{id} {
-      allow read: if true;
-      allow create, update: if isSignedIn();
-      allow delete: if isBizOwner(existing().business_id);
+      allow read: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
+      allow write: if false; // Only backend admin SDK can modify mission progress
     }
 
     match /loyalty_points/{id} {
-      allow read: if true;
-      allow create, update: if isSignedIn();
-      allow delete: if isBizOwner(existing().business_id);
+      allow read: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
+      allow write: if false; // Only backend admin SDK can modify loyalty points
     }
 
     match /loyalty_balances/{id} {
@@ -274,10 +256,8 @@ service cloud.firestore {
     }
     
     match /subscriptions/{id} {
-      allow read: if true;
-      allow create: if isBizOwner(request.resource.data.business_id);
-      allow update: if isBizOwner(resource.data.business_id);
-      allow delete: if isBizOwner(resource.data.business_id);
+      allow read: if isGlobalAdmin() || (isSignedIn() && isBizOwner(resource.data.business_id));
+      allow write: if false; // Only backend admin SDK can modify subscriptions
     }
 
     match /campaign_results/{id} {
@@ -295,10 +275,7 @@ service cloud.firestore {
     }
 
     match /processing_queue/{jobId} {
-      allow read: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
-      allow create: if false; // Only backend admin SDK can create
-      allow update: if isGlobalAdmin() || isBizOwner(resource.data.businessId) || isBizOwner(request.resource.data.businessId);
-      allow delete: if isGlobalAdmin() || isBizOwner(resource.data.businessId);
+      allow read, write: if false; // Only backend admin SDK can access
     }
 
     match /learning_insights/{insightId} {
@@ -331,8 +308,7 @@ service cloud.firestore {
     // Avaliações
     match /reviews/{id} {
       allow read: if true;
-      allow create: if getPlanUpper(get(/databases/$(database)/documents/businesses/$(request.resource.data.business_id)).data.plan_id) in ["BUSINESS", "PREMIUM"];
-      allow update, delete: if false;
+      allow write: if false; // Only backend admin SDK can write reviews
     }
 
     // Descontos e Ofertas

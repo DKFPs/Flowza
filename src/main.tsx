@@ -4,19 +4,23 @@ import App from "./App.tsx";
 import "./index.css";
 
 // Módulo 1 (Sentry) e Módulo 4 (Performance): Configuração Inicial do Sentry
-Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN || "", // O cliente deve fornecer o DSN ou cai no modo log local
-  integrations: [
-    Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration(),
-  ],
-  // Performance Monitoring
-  tracesSampleRate: 1.0, 
-  // Session Replay
-  replaysSessionSampleRate: 0.1, 
-  replaysOnErrorSampleRate: 1.0, 
-  environment: import.meta.env.MODE || "development"
-});
+try {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN || "", // O cliente deve fornecer o DSN ou cai no modo log local
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration(),
+    ],
+    // Performance Monitoring
+    tracesSampleRate: 1.0, 
+    // Session Replay
+    replaysSessionSampleRate: 0.1, 
+    replaysOnErrorSampleRate: 1.0, 
+    environment: import.meta.env.MODE || "development"
+  });
+} catch (e) {
+  console.warn("Sentry failed to initialize (likely due to iframe sandbox restrictions):", e);
+}
 
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
