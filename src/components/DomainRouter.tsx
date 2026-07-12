@@ -20,7 +20,36 @@ const STANDARD_DOMAINS = [
 ];
 
 export const isPreviewDomain = (hostname: string) => {
-  return hostname.endsWith(".run.app") || STANDARD_DOMAINS.some(d => hostname.includes(d));
+  // Check standard static list
+  const isMatchStatic = STANDARD_DOMAINS.some(d => hostname.includes(d));
+  if (isMatchStatic) return true;
+
+  // Check cloud run default previews
+  if (hostname.endsWith(".run.app")) return true;
+
+  // Dynamically check from environment variables if defined
+  try {
+    const appUrl = import.meta.env.VITE_APP_URL || "";
+    if (appUrl) {
+      const parsedUrl = new URL(appUrl);
+      if (hostname === parsedUrl.hostname) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const mainDomain = import.meta.env.VITE_MAIN_DOMAIN || "";
+    if (mainDomain) {
+      const cleanMain = mainDomain.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0];
+      const cleanHost = hostname.replace(/^www\./, "");
+      if (cleanHost === cleanMain) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  return false;
 };
 
 export const CustomDomainRouter = ({ tenantSlug }: { tenantSlug: string }) => {
@@ -42,7 +71,16 @@ export const useDomainCheck = () => {
   useEffect(() => {
     const hostname = window.location.hostname;
     
-    if (isPreviewDomain(hostname)) {
+    // Check if user specified ?main=true, ?bypass_domain=true or already has it saved to force standard Flowza Landing
+    const searchParams = new URLSearchParams(window.location.search);
+    const hasBypassParam = searchParams.get("bypass_domain") === "true" || searchParams.get("main") === "true";
+    const hasStoredBypass = localStorage.getItem("force_main_app") === "true";
+
+    if (hasBypassParam) {
+      localStorage.setItem("force_main_app", "true");
+    }
+
+    if (hasBypassParam || hasStoredBypass || isPreviewDomain(hostname)) {
       setLoading(false);
       return;
     }

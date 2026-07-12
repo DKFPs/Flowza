@@ -24,11 +24,39 @@ try {
 if (!admin.apps.length) {
   if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
     try {
-      let privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY.trim();
       
-      // Ensure the key has the correct PEM headers if missing
-      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-        privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
+      // Remove surrounding literal quotes if any
+      if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+        privateKey = privateKey.slice(1, -1);
+      }
+      if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
+        privateKey = privateKey.slice(1, -1);
+      }
+
+      // Replace literal escaped newlines with actual newlines
+      privateKey = privateKey.replace(/\\n/g, '\n');
+      privateKey = privateKey.replace(/\\r/g, '');
+
+      // Ensure correct PEM formatting by cleaning and restructuring the base64 payload
+      const header = '-----BEGIN PRIVATE KEY-----';
+      const footer = '-----END PRIVATE KEY-----';
+      
+      if (!privateKey.includes(header)) {
+        // Strip any whitespace to get the raw base64 data
+        const rawContent = privateKey.replace(/\s+/g, '');
+        const match = rawContent.match(/.{1,64}/g);
+        const base64Lines = match ? match.join('\n') : rawContent;
+        privateKey = `${header}\n${base64Lines}\n${footer}`;
+      } else {
+        const startIdx = privateKey.indexOf(header);
+        const endIdx = privateKey.indexOf(footer);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const rawContent = privateKey.substring(startIdx + header.length, endIdx).replace(/\s+/g, '');
+          const match = rawContent.match(/.{1,64}/g);
+          const base64Lines = match ? match.join('\n') : rawContent;
+          privateKey = `${header}\n${base64Lines}\n${footer}`;
+        }
       }
       
       admin.initializeApp({

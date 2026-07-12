@@ -103,13 +103,60 @@ const AppContent = () => {
         </Suspense>
       );
     }
+
+    const handleForceBypass = () => {
+      localStorage.setItem("force_main_app", "true");
+      window.location.href = "/?bypass_domain=true";
+    };
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-6 text-center">
-        <h1 className="text-3xl font-bold mb-2 text-foreground">Domínio Não Encontrado</h1>
-        <p className="text-muted-foreground mb-6 max-w-md">{error}</p>
-        <a href="https://flowza.com" className="text-primary hover:underline">
-          Criar um negócio no Flowza
-        </a>
+        <div className="max-w-md w-full bg-card rounded-3xl p-8 border border-border shadow-xl space-y-6">
+          <div className="w-16 h-16 bg-destructive/10 rounded-2xl flex items-center justify-center mx-auto border border-destructive/20 text-destructive">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-foreground font-heading">Domínio Não Encontrado</h1>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              O domínio <code className="bg-secondary px-2 py-0.5 rounded text-xs font-mono font-semibold text-primary">{window.location.hostname}</code> não está configurado ou ativo para nenhum negócio no Flowza.
+            </p>
+          </div>
+
+          <div className="p-4 bg-secondary/50 rounded-2xl border border-border text-left space-y-3">
+            <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider">Você está hospedando o Flowza?</h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Para usar este domínio como a <strong>Página Principal (SaaS Landing Page)</strong> do seu próprio Flowza, você pode:
+            </p>
+            <ul className="text-xs text-muted-foreground space-y-1.5 pl-4 list-disc">
+              <li>Configurar a variável <code className="bg-background px-1 py-0.5 rounded font-mono">VITE_APP_URL</code> no seu arquivo <code className="font-mono">.env</code></li>
+              <li>Ou simplesmente clicar no botão abaixo para forçar o acesso à página inicial.</li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleForceBypass}
+              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm h-11 px-4 rounded-xl transition-colors shadow-lg shadow-primary/25 cursor-pointer"
+            >
+              Acessar Página Inicial
+            </button>
+            <a 
+              href="/auth"
+              className="flex-1 bg-secondary hover:bg-secondary/80 text-foreground font-semibold text-sm h-11 px-4 rounded-xl inline-flex items-center justify-center border border-border transition-colors"
+            >
+              Entrar / Cadastrar
+            </a>
+          </div>
+
+          <div className="pt-2">
+            <a href="https://flowza.com" className="text-xs text-primary hover:underline font-medium">
+              Acessar site oficial do Flowza
+            </a>
+          </div>
+        </div>
       </div>
     );
   }
