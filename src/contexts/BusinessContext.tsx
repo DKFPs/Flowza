@@ -1,6 +1,6 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, limit, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Business, PlanId } from "@/types";
@@ -43,29 +43,81 @@ export const BusinessProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const q = query(collection(db, "businesses"), where("owner_id", "==", user.uid), limit(1));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const biz = { id: snap.docs[0].id, ...snap.docs[0].data() } as Business;
-        setBusiness(biz);
-        
-        // Use counters from business document as source of truth
-        setUsage({
-          appointments: biz.usage_appointments || 0,
-          professionals: biz.usage_professionals || 0,
-          services: biz.usage_services || 0,
-          units: biz.usage_units || 0,
-        });
-      } else {
+    setLoading(true);
+
+    const fallbackFetch = async () => {
+      try {
+        const q = query(collection(db, "businesses"), where("owner_id", "==", user.uid));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          // Sort client-side by created_at descending to find the latest
+          const sortedDocs = [...snap.docs].sort((a, b) => {
+            const aVal = a.data().created_at;
+            const bVal = b.data().created_at;
+            const aTime = aVal?.toMillis ? aVal.toMillis() : (aVal?.seconds ? aVal.seconds * 1000 : new Date(aVal || 0).getTime());
+            const bTime = bVal?.toMillis ? bVal.toMillis() : (bVal?.seconds ? bVal.seconds * 1000 : new Date(bVal || 0).getTime());
+            return bTime - aTime;
+          });
+          const latestDoc = sortedDocs[0];
+          const biz = { id: latestDoc.id, ...latestDoc.data() } as Business;
+          setBusiness(biz);
+          setUsage({
+            appointments: biz.usage_appointments || 0,
+            professionals: biz.usage_professionals || 0,
+            services: biz.usage_services || 0,
+            units: biz.usage_units || 0,
+          });
+        } else {
+          setBusiness(null);
+        }
+      } catch (err) {
+        console.error("Fallback fetch error:", err);
         setBusiness(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
+    };
+
+    // Listen to the user's profile to retrieve the linked business_id
+    const profileRef = doc(db, "profiles", user.uid);
+    const unsubscribeProfile = onSnapshot(profileRef, (profileSnap) => {
+      if (profileSnap.exists()) {
+        const linkedBizId = profileSnap.data().business_id;
+        if (linkedBizId) {
+          // Listen to the specific business document
+          const bizRef = doc(db, "businesses", linkedBizId);
+          getDoc(bizRef).then((bizSnap) => {
+            if (bizSnap.exists()) {
+              const biz = { id: bizSnap.id, ...bizSnap.data() } as Business;
+              setBusiness(biz);
+              setUsage({
+                appointments: biz.usage_appointments || 0,
+                professionals: biz.usage_professionals || 0,
+                services: biz.usage_services || 0,
+                units: biz.usage_units || 0,
+              });
+              setLoading(false);
+            } else {
+              fallbackFetch();
+            }
+          }).catch((err) => {
+            console.error("Error fetching linked business:", err);
+            fallbackFetch();
+          });
+        } else {
+          fallbackFetch();
+        }
+      } else {
+        fallbackFetch();
+      }
     }, (error) => {
-      console.error("Error fetching business snapshot:", error);
-      setLoading(false);
+      console.error("Error listening to profile:", error);
+      fallbackFetch();
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeProfile();
+    };
   }, [user]);
 
   const fetchBusiness = useCallback(async () => {

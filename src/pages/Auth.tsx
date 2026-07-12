@@ -206,8 +206,45 @@ const Auth = () => {
     setLoading(false);
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
+        <div className="relative flex flex-col items-center space-y-6 max-w-sm">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-primary font-bold text-xs">F</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold font-heading">Carregando o Flowza</h2>
+            <p className="text-sm text-muted-foreground">Autenticando e preparando seu ambiente...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-6">
+    <div className="min-h-screen bg-background flex items-center justify-center px-6 relative">
+      {loading && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+          <div className="relative flex flex-col items-center space-y-6 max-w-sm">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-primary font-bold text-xs">F</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold font-heading">
+                {view === "signup" ? "Criando sua conta..." : view === "forgot-password" ? "Enviando e-mail..." : "Entrando..."}
+              </h2>
+              <p className="text-sm text-muted-foreground">Isso levará apenas alguns segundos. Por favor, aguarde.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-sm">
         <Link to="/" className="block text-center mb-8">
           <span className="font-heading text-2xl font-bold text-foreground">

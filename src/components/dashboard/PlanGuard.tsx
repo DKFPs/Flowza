@@ -3,7 +3,7 @@ import { useState, ReactNode } from "react";
 import { useBusiness } from "@/contexts/BusinessContext";
 import { PlanLimits } from "@/lib/plans";
 import { PlanId } from "@/types";
-import { UpgradeModal } from "./UpgradeModal";
+import { UpgradeDialog } from "./UpgradeDialog";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -48,10 +48,11 @@ export const PlanGuard = ({
       <div className="filter grayscale-[0.5] opacity-60 pointer-events-none select-none">
         {children}
       </div>
-      <UpgradeModal 
+      <UpgradeDialog 
         open={modalOpen} 
         onOpenChange={setModalOpen} 
-        feature={label} 
+        featureName={label} 
+        featureKey={feature}
         targetPlan={targetPlan}
       />
     </div>

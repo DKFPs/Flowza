@@ -122,7 +122,7 @@ service cloud.firestore {
 
     // Profiles: Configurações do usuário (Dono do Negócio)
     match /profiles/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isGlobalAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
@@ -194,7 +194,14 @@ service cloud.firestore {
     }
 
     match /system_events/{id} {
-      allow read, write: if false; // Only backend admin SDK can access
+      allow read: if isGlobalAdmin();
+      allow write: if false; // Only backend admin SDK can access
+    }
+
+    match /feedbacks/{feedbackId} {
+      allow read: if isGlobalAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isGlobalAdmin();
     }
 
     match /admin_audit_logs/{id} {

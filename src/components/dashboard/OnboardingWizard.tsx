@@ -75,6 +75,40 @@ const OnboardingWizard = () => {
 
       const trialExpiresAt = trialDays > 0 ? new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000) : null;
 
+      // Map Portuguese day name abbreviation to English day name expected by schema
+      const dayMap: Record<string, string> = {
+        "Seg": "monday",
+        "Ter": "tuesday",
+        "Qua": "wednesday",
+        "Qui": "thursday",
+        "Sex": "friday",
+        "Sáb": "saturday",
+        "Dom": "sunday"
+      };
+
+      const dayToNumMap: Record<string, number> = {
+        "Dom": 0,
+        "Seg": 1,
+        "Ter": 2,
+        "Qua": 3,
+        "Qui": 4,
+        "Sex": 5,
+        "Sáb": 6
+      };
+
+      const defaultWorkingHours = Object.keys(dayMap).map(ptDay => {
+        const engDay = dayMap[ptDay];
+        const isActive = hours.days.includes(ptDay);
+        return {
+          day_of_week: engDay,
+          start_time: hours.start,
+          end_time: hours.end,
+          is_active: isActive
+        };
+      });
+
+      const workingDaysNum = hours.days.map(d => dayToNumMap[d]).filter(d => d !== undefined);
+
       // 1. Create Business
       const bizRef = await addDoc(collection(db, "businesses"), {
         ...biz,
@@ -82,13 +116,14 @@ const OnboardingWizard = () => {
         plan_id: initialPlanId,
         subscription_status: trialDays > 0 ? "trialing" : "active",
         trial_expires_at: trialExpiresAt,
-                limit_professionals: initialPlan.limits.professionalsLimit,
+        limit_professionals: initialPlan.limits.professionalsLimit,
         limit_services: initialPlan.limits.servicesLimit,
-                usage_appointments: 0,
+        usage_appointments: 0,
         usage_professionals: 1,
         usage_services: 1,
         usage_units: 0,
         settings: { business_hours: hours },
+        default_working_hours: defaultWorkingHours,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp()
       });
@@ -112,13 +147,29 @@ const OnboardingWizard = () => {
       });
 
       // 4. Create First Professional
-      await addDoc(collection(db, "professionals"), {
+      const proRef = await addDoc(collection(db, "professionals"), {
         business_id: bizRef.id,
         name: pro.name || "Profissional Principal",
         user_id: user.uid,
         is_active: true,
+        working_hours: { start: hours.start, end: hours.end },
+        working_days: workingDaysNum,
         created_at: serverTimestamp()
       });
+
+      // 5. Create working hours documents for professional
+      for (const h of defaultWorkingHours) {
+        if (h.is_active) {
+          await addDoc(collection(db, "working_hours"), {
+            business_id: bizRef.id,
+            professional_id: proRef.id,
+            day_of_week: h.day_of_week,
+            start_time: h.start_time,
+            end_time: h.end_time,
+            created_at: serverTimestamp()
+          });
+        }
+      }
 
       toast({ title: "Configuração concluída! 🎉", description: "Seu dashboard está pronto." });
       window.location.reload();

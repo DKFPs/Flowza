@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HelpGuide } from "@/components/dashboard/HelpGuide";
+import { FeedbackWidget } from "@/components/dashboard/FeedbackWidget";
 import { UpgradeTrigger } from "@/components/dashboard/UpgradeTrigger";
 import { PromoBanner } from "@/components/dashboard/PromoBanner";
 import { TrialBanner } from "@/components/dashboard/TrialBanner";
@@ -243,6 +244,7 @@ const Dashboard = () => {
         </main>
         <BottomNav items={bottomNavItems} />
         <HelpGuide />
+        <FeedbackWidget />
       </div>
     </div>
   );

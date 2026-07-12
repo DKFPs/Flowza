@@ -19,7 +19,19 @@ export const PWAHandler = () => {
     if (manifestLink && manifestLink.hasAttribute('data-href')) {
       manifestLink.setAttribute('href', manifestLink.getAttribute('data-href') || '');
     }
-  }, []);
+
+    // Solicitar permissão de notificação para lembretes de agendamento
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+          toast({
+            title: "Notificações Ativadas",
+            description: "Você receberá lembretes automáticos dos seus agendamentos.",
+          });
+        }
+      });
+    }
+  }, [toast]);
 
   useEffect(() => {
     // Registrando a PWA para suportar offline caching na Flowza

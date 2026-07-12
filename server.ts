@@ -640,6 +640,119 @@ async function startServer() {
     }
   });
 
+  app.post("/api/businesses/delete", express.json(), authenticateUser, async (req: any, res) => {
+    try {
+      const { businessId } = req.body;
+      const uid = req.user.uid;
+
+      if (!businessId) {
+        return res.status(400).json({ error: "O ID do negócio é obrigatório." });
+      }
+
+      // 1. Fetch business and verify ownership
+      const bizRef = adminDb.collection("businesses").doc(businessId);
+      const bizSnap = await bizRef.get();
+
+      if (!bizSnap.exists) {
+        return res.status(404).json({ error: "Negócio não encontrado." });
+      }
+
+      const bizData = bizSnap.data();
+      if (bizData.owner_id !== uid) {
+        return res.status(403).json({ error: "Você não tem permissão para excluir este negócio." });
+      }
+
+      const businessName = bizData.name;
+      let totalRemoved = 0;
+      const details: Record<string, number> = {};
+
+      // 2. Delete all related documents in subcollections/other collections
+      const collectionsToClean = [
+        { name: "professionals", field: "business_id" },
+        { name: "services", field: "business_id" },
+        { name: "appointments", field: "business_id" },
+        { name: "clients", field: "business_id" },
+        { name: "working_hours", field: "business_id" },
+        { name: "fixed_client_slots", field: "business_id" },
+        { name: "reviews", field: "business_id" },
+        { name: "style_gallery", field: "business_id" },
+        { name: "loyalty_balances", field: "business_id" },
+        { name: "loyalty_levels", field: "business_id" },
+        { name: "loyalty_missions", field: "business_id" },
+        { name: "loyalty_mission_progress", field: "business_id" },
+        { name: "loyalty_points", field: "business_id" },
+        { name: "loyalty_rewards", field: "business_id" },
+        { name: "loyalty_redemptions", field: "business_id" },
+        { name: "notifications", field: "business_id" },
+        { name: "marketing_campaigns", field: "businessId" },
+        { name: "marketing_configs", field: "businessId" },
+        { name: "processing_queue", field: "businessId" },
+        { name: "notification_queue", field: "business_id" },
+        { name: "learning_insights", field: "businessId" },
+        { name: "system_events", field: "business_id" },
+        { name: "admin_audit_logs", field: "business_id" },
+        { name: "units", field: "business_id" }
+      ];
+
+      for (const col of collectionsToClean) {
+        const q = adminDb.collection(col.name).where(col.field, "==", businessId);
+        const snapshot = await q.get();
+        if (!snapshot.empty) {
+          const batch = adminDb.batch();
+          snapshot.docs.forEach((doc: any) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          totalRemoved += snapshot.size;
+          details[col.name] = snapshot.size;
+        } else {
+          details[col.name] = 0;
+        }
+      }
+
+      // 3. Delete the business document itself
+      await bizRef.delete();
+      totalRemoved += 1;
+      details["businesses"] = 1;
+
+      // 4. Update the user profile
+      const profileRef = adminDb.collection("profiles").doc(uid);
+      await profileRef.update({
+        business_id: null,
+        active_business: null,
+        onboarding_completed: false,
+        updated_at: FieldValue.serverTimestamp()
+      });
+
+      // 5. Add platform audit log entry
+      await adminDb.collection("admin_audit_logs").add({
+        action: "business_deleted",
+        user_id: uid,
+        business_id: "deleted_system",
+        details: {
+          deleted_business_id: businessId,
+          deleted_business_name: businessName,
+          total_records_removed: totalRemoved,
+          removed_by_user_id: uid,
+          breakdown: details
+        },
+        timestamp: FieldValue.serverTimestamp()
+      });
+
+      return res.json({
+        success: true,
+        message: `Negócio "${businessName}" e todos os seus ${totalRemoved} registros associados foram excluídos com sucesso.`,
+        deleted_business_id: businessId,
+        total_records_removed: totalRemoved,
+        breakdown: details
+      });
+
+    } catch (error: any) {
+      console.error("Error deleting business:", error);
+      return res.status(500).json({ error: "Erro interno do servidor ao excluir o negócio." });
+    }
+  });
+
 // --- ADMIN ENDPOINTS (PROFESSIONALS & SERVICES) ---
   app.post("/api/professionals", express.json(), authenticateUser, async (req: any, res) => {
     try {

@@ -40,6 +40,9 @@ import { Progress } from "@/components/ui/progress";
 import { 
   AreaChart, 
   Area, 
+  BarChart,
+  Bar,
+  Legend,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -108,6 +111,7 @@ const Overview = () => {
   
   // Real data states
   const [growthData, setGrowthData] = useState<{ name: string; value: number }[]>([]);
+  const [loyaltyData, setLoyaltyData] = useState<{ month: string; retention: number; loyalty: number }[]>([]);
   const [cancellationRate, setCancellationRate] = useState(0);
   const [attendanceRate, setAttendanceRate] = useState(0);
   const [retentionRate, setRetentionRate] = useState(0);
@@ -204,6 +208,17 @@ const Overview = () => {
            last7DaysData.push({ name: dayNames[d.getDay()], value: count });
         }
         setGrowthData(last7DaysData);
+        
+        // Mock Loyalty & Retention Data (last 6 months)
+        const mockLoyaltyData = [
+          { month: "Jan", retention: 65, loyalty: 30 },
+          { month: "Fev", retention: 68, loyalty: 35 },
+          { month: "Mar", retention: 72, loyalty: 40 },
+          { month: "Abr", retention: 75, loyalty: 48 },
+          { month: "Mai", retention: 80, loyalty: 55 },
+          { month: "Jun", retention: 85, loyalty: 65 }
+        ];
+        setLoyaltyData(mockLoyaltyData);
         
         setDataLoaded(true);
 
@@ -569,6 +584,32 @@ const Overview = () => {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 mt-6">
+        <FeatureLock isLocked={!hasAdvancedCharts} featureName="Retenção e Fidelidade" planName="Business">
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden bg-white/50 backdrop-blur-md">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold tracking-tight uppercase">Desempenho de Retenção e Fidelidade</CardTitle>
+              <CardDescription className="text-xs font-bold tracking-wider uppercase">Taxa de retenção de clientes vs Adesão ao programa de fidelidade (Últimos 6 meses)</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="h-[280px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={loyaltyData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))'}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} />
+                    <Tooltip cursor={{fill: 'hsl(var(--muted))', opacity: 0.2}} contentStyle={{ borderRadius: '12px', border: '1px solid hsl(var(--border))', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 600, paddingTop: '20px' }} />
+                    <Bar dataKey="retention" name="Taxa de Retenção (%)" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={30} />
+                    <Bar dataKey="loyalty" name="Adesão Fidelidade (%)" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} barSize={30} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </FeatureLock>
       </div>
 
       {/* Module 5: CTA Contínuo (Plano Atual + Upgrade) - Hidden on Mobile to avoid BottomNav conflict */}

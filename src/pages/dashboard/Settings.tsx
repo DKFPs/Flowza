@@ -264,71 +264,55 @@ const Settings = () => {
       toast({ title: "Erro", description: "Usuário não autenticado." });
       return;
     }
+    if (!business?.id) {
+      toast({ title: "Erro", description: "Negócio não encontrado." });
+      return;
+    }
+    if (deleteConfirmationText !== business.name) {
+      toast({ title: "Confirmação incorreta", description: "Você deve digitar exatamente o nome do negócio para confirmar.", variant: "destructive" });
+      return;
+    }
     
     setLoading(true);
 
     try {
-      // Tentar deletar o usuário no Auth PRIMEIRO. 
-      // Se não der erro (ex: requires-recent-login), continuamos e a conta foi deletada da Auth no backend,
-      // mas precisamos limpar Firestore antes que os tokens percam validade (as regras podem continuar funcionando com o cache de auth atual)
-      // Wait, se deletarmos o usuário no firebase Auth antes, nós perdemos a permissão de escrever no Firestore usando a API cliente?
-      // Sim, então devemos deletar no firestore PRIMEIRO, mas se a Auth falhar depois exigindo re-autenticação, não podemos desfazer a exclusão no Firestore!
-      
-      // Assim, vamos primeiro TESTAR excluir doc falso para ter certeza? Não.
-      // O recomendável é tentar apagar os dados do usuário, se der required-recent-login vamos ter q avisar.
-      
-      // Delete business document
-      if (business?.id) {
-        try {
-          await deleteDoc(doc(db, "businesses", business.id));
-        } catch(e) {
-          console.warn("Negocio ja estava deletado ou falha (businesses)", e);
-        }
-      }
-      
-      // Excluir o perfil do Firestore
-      try {
-        await deleteDoc(doc(db, "profiles", user.uid));
-      } catch (e) {
-        console.warn("Perfil não encontrado ou falha", e);
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        throw new Error("Não foi possível obter o token de autenticação.");
       }
 
-      // Delete auth user
-      try {
-        await deleteUser(user);
-        toast({ title: "Conta e negócio excluídos com sucesso." });
-      } catch (authErr: any) {
-        console.warn("Conta firebase auth não deletada", authErr);
-        if (authErr.code === 'auth/requires-recent-login') {
-          toast({ 
-            title: "Reautenticação necessária", 
-            description: "Por segurança, faça login novamente para excluir sua conta da plataforma.", 
-            variant: "destructive" 
-          });
-          // Forçar o logout para o usuário se logar novamente
-          await auth.signOut();
-          navigate("/auth");
-          return;
-        } else {
-           toast({ title: "Erro ao excluir conta Auth:", description: authErr.message });
-        }
+      const res = await fetch("/api/businesses/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ businessId: business.id })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Erro ao excluir o negócio no backend.");
       }
+
+      const resData = await res.json();
+      toast({ title: "Negócio excluído com sucesso! 🎉", description: resData.message });
       
-      try {
-        await auth.signOut();
-      } catch(e) {}
+      setIsDeleteDialogOpen(false);
+      setDeleteConfirmationText("");
       
-      navigate("/auth");
+      // Redireciona para a raiz. Com a redefinição de business_id = null e onboarding_completed = false
+      // no perfil, o roteador irá redirecioná-lo automaticamente para o OnboardingWizard.
+      navigate("/");
     } catch (error: any) {
       console.error("Delete Error:", error);
       toast({ 
-        title: "Erro ao excluir dado:", 
+        title: "Erro ao excluir negócio", 
         description: error.message || "Tente novamente mais tarde.", 
         variant: "destructive" 
       });
     } finally {
       setLoading(false);
-      setIsDeleteDialogOpen(false);
     }
   };
 
@@ -1160,21 +1144,24 @@ const Settings = () => {
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir Conta e Negócio</DialogTitle>
+            <DialogTitle>Excluir Negócio</DialogTitle>
             <DialogDescription>
-              Esta ação é irreversível. Seu negócio e sua conta de usuário serão completamente excluídos.
-              Para confirmar, digite <b>EXCLUIR</b> no campo abaixo:
+              Esta ação é irreversível. Seu negócio e todos os dados associados (profissionais, serviços, agendamentos, clientes, avaliações, etc.) serão completamente excluídos. 
+              <br /><br />
+              Sua conta de usuário (e-mail, senha e perfil) <b>permanecerá ativa</b> para que você possa criar um novo negócio imediatamente.
+              <br /><br />
+              Para confirmar, digite exatamente o nome do seu negócio "<b>{business?.name}</b>" abaixo:
             </DialogDescription>
           </DialogHeader>
           <Input 
             type="text"
             value={deleteConfirmationText}
             onChange={e => setDeleteConfirmationText(e.target.value)}
-            placeholder="EXCLUIR"
+            placeholder={business?.name || "Nome do Negócio"}
           />
           <DialogFooter>
              <Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancelar</Button>
-             <Button type="button" variant="destructive" disabled={deleteConfirmationText !== 'EXCLUIR' || loading} onClick={handleConfirmDelete}>Deletar</Button>
+             <Button type="button" variant="destructive" disabled={deleteConfirmationText !== business?.name || loading} onClick={handleConfirmDelete}>Confirmar Exclusão</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
