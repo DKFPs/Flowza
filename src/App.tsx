@@ -152,9 +152,12 @@ const AppContent = () => {
           </div>
 
           <div className="pt-2">
-            <a href="https://flowza.com" className="text-xs text-primary hover:underline font-medium">
-              Acessar site oficial do Flowza
-            </a>
+            <button
+              onClick={handleForceBypass}
+              className="text-xs text-primary hover:underline font-medium bg-transparent border-0 outline-none cursor-pointer"
+            >
+              Acessar Página Inicial deste App
+            </button>
           </div>
         </div>
       </div>

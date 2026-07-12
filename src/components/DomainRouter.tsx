@@ -8,42 +8,59 @@ import { lazy, Suspense } from "react";
 const BookingPage = lazy(() => import("@/pages/BookingPage"));
 const ClientArea = lazy(() => import("@/pages/ClientArea"));
 
-const STANDARD_DOMAINS = [
+const MAIN_DOMAINS = [
+  "flowzaapp.netlify.app",
   "localhost",
   "127.0.0.1",
-  "app.flowza.com",
   "flowza.com",
+  "www.flowza.com",
   "flowza.app",
-  "cname.flowza.com",
-  "ais-dev-",
-  "ais-pre-"
+  "www.flowza.app",
+  "app.flowza.com",
+  "cname.flowza.com"
 ];
 
 export const isPreviewDomain = (hostname: string) => {
-  // Check standard static list
-  const isMatchStatic = STANDARD_DOMAINS.some(d => hostname.includes(d));
-  if (isMatchStatic) return true;
+  const cleanHost = hostname.toLowerCase().trim();
 
-  // Check cloud run default previews
-  if (hostname.endsWith(".run.app")) return true;
+  // 1. Check if it matches exactly or is a subdomain of any of our MAIN_DOMAINS
+  const isMatchMain = MAIN_DOMAINS.some(domain => {
+    const cleanDomain = domain.toLowerCase().trim();
+    return cleanHost === cleanDomain || cleanHost.endsWith("." + cleanDomain);
+  });
+  if (isMatchMain) return true;
 
-  // Dynamically check from environment variables if defined
+  // 2. Check if it is a common cloud hosting preview/staging domain suffix
+  if (
+    cleanHost.endsWith(".netlify.app") ||
+    cleanHost.endsWith(".vercel.app") ||
+    cleanHost.endsWith(".github.io") ||
+    cleanHost.endsWith(".run.app") ||
+    cleanHost.endsWith(".gitpod.io") ||
+    cleanHost.includes("ais-dev-") ||
+    cleanHost.includes("ais-pre-")
+  ) {
+    return true;
+  }
+
+  // 3. Dynamically check from VITE_APP_URL environment variable if defined
   try {
     const appUrl = import.meta.env.VITE_APP_URL || "";
     if (appUrl) {
       const parsedUrl = new URL(appUrl);
-      if (hostname === parsedUrl.hostname) {
+      if (cleanHost === parsedUrl.hostname.toLowerCase().trim()) {
         return true;
       }
     }
   } catch (e) {}
 
+  // 4. Dynamically check from VITE_MAIN_DOMAIN environment variable if defined
   try {
     const mainDomain = import.meta.env.VITE_MAIN_DOMAIN || "";
     if (mainDomain) {
-      const cleanMain = mainDomain.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0];
-      const cleanHost = hostname.replace(/^www\./, "");
-      if (cleanHost === cleanMain) {
+      const cleanMain = mainDomain.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0].toLowerCase().trim();
+      const cleanHostWithoutWww = cleanHost.replace(/^www\./, "");
+      if (cleanHostWithoutWww === cleanMain || cleanHost === cleanMain) {
         return true;
       }
     }
@@ -81,6 +98,7 @@ export const useDomainCheck = () => {
     }
 
     if (hasBypassParam || hasStoredBypass || isPreviewDomain(hostname)) {
+      setIsCustomDomain(false);
       setLoading(false);
       return;
     }
