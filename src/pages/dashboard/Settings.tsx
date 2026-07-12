@@ -290,12 +290,18 @@ const Settings = () => {
         body: JSON.stringify({ businessId: business.id })
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Erro ao excluir o negócio no backend.");
+      const raw = await res.text();
+      let resData: any = {};
+      try {
+        resData = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        resData = {};
       }
 
-      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.error || "Erro ao excluir o negócio no backend.");
+      }
+
       toast({ title: "Negócio excluído com sucesso! 🎉", description: resData.message });
       
       setIsDeleteDialogOpen(false);

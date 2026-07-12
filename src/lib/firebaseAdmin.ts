@@ -22,7 +22,24 @@ try {
 }
 
 if (!admin.apps.length) {
-  if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
+  let initialized = false;
+
+  // 1. Try FIREBASE_SERVICE_ACCOUNT first, as it contains complete, verified credentials
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("Firebase Admin SDK successfully initialized via FIREBASE_SERVICE_ACCOUNT.");
+      initialized = true;
+    } catch (e) {
+      console.error("Failed to initialize Firebase Admin via FIREBASE_SERVICE_ACCOUNT:", e);
+    }
+  }
+
+  // 2. If not initialized yet, try individual environment variables
+  if (!initialized && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
     try {
       let privateKey = process.env.FIREBASE_PRIVATE_KEY.trim();
       
@@ -43,7 +60,6 @@ if (!admin.apps.length) {
       const footer = '-----END PRIVATE KEY-----';
       
       if (!privateKey.includes(header)) {
-        // Strip any whitespace to get the raw base64 data
         const rawContent = privateKey.replace(/\s+/g, '');
         const match = rawContent.match(/.{1,64}/g);
         const base64Lines = match ? match.join('\n') : rawContent;
@@ -66,33 +82,24 @@ if (!admin.apps.length) {
           privateKey: privateKey,
         })
       });
+      console.log("Firebase Admin SDK successfully initialized via individual FIREBASE_PRIVATE_KEY.");
+      initialized = true;
     } catch (e) {
-      console.error("Invalid Firebase credentials from environment", e);
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error("Failed to initialize Firebase Admin SDK in production due to invalid credentials.");
-      } else {
-        admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId });
-      }
+      console.error("Invalid individual Firebase credentials from environment", e);
     }
-  } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    try {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
-    } catch (e) {
-      console.error("Invalid FIREBASE_SERVICE_ACCOUNT format", e);
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error("Failed to initialize Firebase Admin SDK in production due to invalid service account.");
-      } else {
-        admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId });
-      }
-    }
-  } else {
+  }
+
+  // 3. Fallback to Application Default Credentials (ADC) if allowed or in non-production
+  if (!initialized) {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error("FATAL: Missing Firebase environment variables. FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are required in production.");
+      throw new Error("FATAL: Missing or invalid Firebase environment credentials in production. Both FIREBASE_SERVICE_ACCOUNT and individual variables failed to initialize.");
+    } else {
+      console.log("Falling back to Firebase Admin SDK applicationDefault credentials.");
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId
+      });
     }
-    admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId });
   }
 }
 
